@@ -175,11 +175,15 @@ const GAP_MIN: usize = 2;
 impl OverviewWidths {
     fn new(width: u16, app: &App) -> Self {
         let total = width as usize;
+        // Codex names size this column too, else a codex row (its own roster,
+        // invisible to `config.profiles`) truncates against a width picked
+        // for claude names alone.
         let max_name = app
             .config()
             .profiles
             .iter()
             .map(|p| p.name.chars().count())
+            .chain(app.codex_rows.iter().map(|row| row.name.chars().count()))
             .max()
             .unwrap_or(8);
         let shows_clock = ResetFmt::from_state(&app.config().state).shows_clock();

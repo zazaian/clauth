@@ -2403,6 +2403,44 @@ fn a_codex_rows_usage_cells_sit_under_their_headers() {
     );
 }
 
+/// A codex name longer than every claude name still widens the name column:
+/// `OverviewWidths` used to measure `config.profiles` alone, so a codex
+/// account (its own roster) could never earn a wider column and truncated
+/// against a width sized for claude names.
+#[test]
+fn a_long_codex_name_widens_the_name_column() {
+    let _home = crate::testutil::HomeSandbox::new();
+    let long_name = "LongCodexAccountName"; // 20 chars: over the old 7-8 floor, under NAME_MAX (22)
+    let row = CodexRow {
+        name: crate::profile::ProfileName::from(long_name),
+        active: false,
+        broken: false,
+        plan: Some("pro".to_string()),
+        five_hour: None,
+        seven_day: None,
+    };
+    // Claude names (here: none) must not be what caps the column — the fixture
+    // carries the long name only via `app.codex_rows`, same field the fix reads.
+    let mut app = App::new(config_with(vec![], None, vec![]));
+    app.codex_rows = vec![row.clone()];
+
+    // 120 columns clears NAME_WIDE_AT (86), where the name tier's ceiling is
+    // NAME_MAX (22) rather than 16 — the same width a claude name this long
+    // would need to avoid the tiering system's own, unrelated narrow-width cap.
+    let widths = OverviewWidths::new(120, &app);
+    assert!(
+        widths.name >= long_name.chars().count(),
+        "a codex name must size the column the way a claude name would: got {}",
+        widths.name
+    );
+    let line = render_codex_row(&app, &row, &widths);
+    let rendered: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+    assert!(
+        rendered.contains(long_name),
+        "the full codex name should render, not a truncated prefix: {rendered:?}"
+    );
+}
+
 /// A quarantined codex chain renders the same broken-login `×` the claude row
 /// shows; a live chain keeps the blank marker cell. The quarantine read joins
 /// the once-a-second `codex_rows` snapshot, never a per-frame renderer read.

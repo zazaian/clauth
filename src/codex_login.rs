@@ -247,7 +247,7 @@ fn rejection_copy(rejection: &AuthorizeRejection) -> (&'static str, &'static str
 
 fn write_reply(stream: &mut std::net::TcpStream, body: &str) {
     let page = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{body}",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\n\r\n{body}",
         body.len()
     );
     let _ = stream.write_all(page.as_bytes());

@@ -119,7 +119,7 @@ fn draw_overview_accounts(frame: &mut Frame<'_>, area: Rect, app: &App) {
             theme::dim(),
         )])));
         for row in codex {
-            rows.push(ListItem::new(render_codex_row(row, &widths)));
+            rows.push(ListItem::new(render_codex_row(app, row, &widths)));
         }
     }
 
@@ -385,7 +385,12 @@ fn overview_header(widths: &OverviewWidths, deepseek: bool) -> Line<'static> {
 /// One codex account, in the claude columns: name, plan, 5h, 7d. The cursor
 /// and timer slots are kept blank and no live cell is drawn — this section is
 /// read-only, and a timer would promise a countdown the Overview cannot act on.
-fn render_codex_row(row: &CodexRow, widths: &OverviewWidths) -> Line<'static> {
+/// The 5h/7d cells reuse `window_summary_spans_bracketed` so a codex bar is
+/// pixel-identical to a claude one at the same width tier, wall-clock/countdown
+/// reset suffix included once the column is wide enough for it. `reset_style`
+/// is always `None` (plain faint countdown): codex carries no drain-rate/burn
+/// tracking to color it from.
+fn render_codex_row(app: &App, row: &CodexRow, widths: &OverviewWidths) -> Line<'static> {
     let name_style = if row.active {
         theme::accent().bold()
     } else {
@@ -412,16 +417,36 @@ fn render_codex_row(row: &CodexRow, widths: &OverviewWidths) -> Line<'static> {
     // The usage cells take the claude row's lead-in (narrow gap + a blank
     // timer slot) and its left alignment, and the 7d cell drops with its
     // column, so a codex reading sits under `5h`/`7d` and never under `live`.
-    let cell = |window: Option<&crate::usage::UsageWindow>, w: usize| match window {
-        Some(win) => Span::styled(fixed(&format!("{:.0}%", win.utilization), w), theme::base()),
-        None => Span::styled(fixed(NO_DATA, w), theme::faint()),
+    // Spans vary in cell count between the bar and no-data branches, so pad
+    // from the actual rendered length exactly as `render_overview_row` does.
+    let reset_fmt = ResetFmt::from_state(&app.config().state);
+    let cell = |window: Option<&UsageWindow>, width: usize, include_bar: bool| {
+        let spans = window_summary_spans_bracketed(
+            window,
+            width,
+            include_bar,
+            None,
+            reset_fmt,
+            window.is_some_and(is_past_reset),
+        );
+        let len: usize = spans.iter().map(|s| s.content.chars().count()).sum();
+        let pad = width.saturating_sub(len);
+        (spans, pad)
     };
     spans.push(narrow_gap(widths));
     spans.push(Span::raw(" ".repeat(TIMER_SLOT)));
-    spans.push(cell(row.five_hour.as_ref(), widths.five_hour));
+    let (five_spans, five_pad) = cell(row.five_hour.as_ref(), widths.five_hour, true);
+    spans.extend(five_spans);
+    spans.push(Span::raw(" ".repeat(five_pad)));
     if widths.seven_day > 0 {
         spans.push(gap(widths));
-        spans.push(cell(row.seven_day.as_ref(), widths.seven_day));
+        let (seven_spans, seven_pad) = cell(
+            row.seven_day.as_ref(),
+            widths.seven_day,
+            widths.seven_day >= 18,
+        );
+        spans.extend(seven_spans);
+        spans.push(Span::raw(" ".repeat(seven_pad)));
     }
     Line::from(spans)
 }

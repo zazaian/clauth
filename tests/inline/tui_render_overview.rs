@@ -2377,10 +2377,10 @@ fn a_codex_rows_usage_cells_sit_under_their_headers() {
 
     let wide = OverviewWidths::new(80, &app);
     assert!(wide.seven_day > 0, "80 columns keep the 7d column");
-    let line = render_codex_row(&row, &wide);
+    let line = render_codex_row(&app, &row, &wide);
     assert_eq!(
         five_hour_cell_text(&wide, false, &line),
-        fixed("42%", wide.five_hour),
+        fixed("[████░░░░░░]  42%", wide.five_hour),
         "the 5h value sits under the 5h header, left-aligned like the claude bar"
     );
     assert_eq!(
@@ -2391,10 +2391,10 @@ fn a_codex_rows_usage_cells_sit_under_their_headers() {
 
     let narrow = OverviewWidths::new(56, &app);
     assert_eq!(narrow.seven_day, 0, "56 columns drop the 7d column");
-    let line = render_codex_row(&row, &narrow);
+    let line = render_codex_row(&app, &row, &narrow);
     assert_eq!(
         five_hour_cell_text(&narrow, false, &line),
-        fixed("42%", narrow.five_hour)
+        fixed("[██░░░]  42%", narrow.five_hour)
     );
     assert_eq!(
         live_cell_text(&narrow, &line).trim_end(),
@@ -2434,8 +2434,8 @@ fn a_quarantined_codex_row_renders_the_broken_marker() {
 
     let app = App::new(config_with(vec![], None, vec![]));
     let widths = OverviewWidths::new(80, &app);
-    let broken = render_codex_row(&rows[0], &widths);
-    let live = render_codex_row(&rows[1], &widths);
+    let broken = render_codex_row(&app, &rows[0], &widths);
+    let live = render_codex_row(&app, &rows[1], &widths);
 
     // The codex row carries the list rows' slots (blank 2-cell cursor prefix,
     // marker cell, gap, name), so the glyph and the name sit in the claude

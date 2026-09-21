@@ -9616,15 +9616,14 @@ fn run_confirm_action(app: &mut App, action: ConfirmAction) {
             }
             perform_switch(app, &name);
         }
-        ConfirmAction::SwitchCodex(name) => {
-            let _ = crate::codex_profiles::CodexState::update(|state| {
-                state.set_active(Some(&name));
-                Ok(())
-            });
-            app.codex_rows = codex_rows();
-            app.last_reload_fp = reload_fingerprint();
-            app.toast(ToastKind::Success, format!("switched codex to '{name}'"));
-        }
+        ConfirmAction::SwitchCodex(name) => match crate::actions::switch_codex_profile(&name) {
+            Ok(()) => {
+                app.codex_rows = codex_rows();
+                app.last_reload_fp = reload_fingerprint();
+                app.toast(ToastKind::Success, format!("switched codex to '{name}'"));
+            }
+            Err(e) => app.toast(ToastKind::Danger, format!("switch failed\n{e}")),
+        },
         ConfirmAction::DiscardDivergence(name) => run_discard_divergence(app, &name),
         ConfirmAction::RotateAll => {
             // Refuse if anything is in-flight. Bootstrap is a whole-worker

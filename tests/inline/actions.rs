@@ -1384,18 +1384,30 @@ fn write_codex_state(body: &str) {
     std::fs::write(dir.join("codex-profiles.toml"), body).expect("write codex state");
 }
 
-/// A codex switch writes the codex file's active slot and nothing anywhere
-/// else — decision 4's per-harness independence, observed rather than assumed.
+/// A codex switch moves the codex file's active slot — the claude slot lives
+/// in a separate file and never moves, decision 4's per-harness independence
+/// — AND re-points the operator's `~/.codex/auth.json` at the target's own
+/// store, creating the operator home outright if this switch is its first
+/// touch (a browser-login-only roster never otherwise creates it). MZ's
+/// ruling 2026-09-21 (see "Deviations as shipped" in docs/codex-plan.md): a
+/// TUI selection must swap the live credentials file the way claude's own
+/// switch does, so this is no longer a bare marker move.
 #[test]
-fn switch_codex_moves_only_the_codex_slot() {
-    let _home = HomeSandbox::new();
+fn switch_codex_moves_the_slot_and_relinks_a_fresh_operator_home() {
+    let home = HomeSandbox::new();
     write_codex_state("active_profile = \"cx1\"\nprofiles = [\"cx1\", \"cx2\"]\n");
+    crate::testutil::write_codex_store("cx1", "{}");
+    crate::testutil::write_codex_store("cx2", "{}");
     save_app_state(&crate::profile::AppState {
         active_profile: Some("cl".into()),
         profiles: vec!["cl".into()],
         ..Default::default()
     })
     .expect("save claude state");
+    assert!(
+        !home.home().join(".codex").exists(),
+        "precondition: nothing has ever touched the operator home"
+    );
 
     switch_codex_profile("cx2").expect("switch");
 
@@ -1406,9 +1418,200 @@ fn switch_codex_moves_only_the_codex_slot() {
         Some("cl"),
         "the claude active slot must not move on a codex switch"
     );
+    let slot = home.home().join(".codex").join("auth.json");
+    assert_eq!(
+        std::fs::read_link(&slot).expect("the switch creates .codex and links fresh"),
+        profile_dir(&crate::profile::ProfileName::from("cx2"))
+            .expect("dir")
+            .join("auth.json"),
+        "the operator slot follows the newly active profile's own store"
+    );
 
     let err = switch_codex_profile("ghost").expect_err("unknown name refuses");
     assert_eq!(err.to_string(), "codex profile 'ghost' not found");
+}
+
+/// A dormant former holder (no live session) is simply relinked past — the
+/// live-session gate is the only thing standing between a switch and a
+/// relink.
+#[test]
+fn switch_codex_relinks_past_a_dormant_former_holder() {
+    let home = HomeSandbox::new();
+    write_operator_codex(&home, Some(OPERATOR_AUTH), None);
+    codex_login_capture("cx1").expect("capture seeds the operator link");
+    crate::codex_profiles::CodexState::update(|state| {
+        state.add_profile("cx2");
+        Ok(())
+    })
+    .expect("roster cx2");
+    crate::testutil::write_codex_store("cx2", "{}");
+    let slot = home.home().join(".codex").join("auth.json");
+    let cx1_store = profile_dir(&crate::profile::ProfileName::from("cx1"))
+        .expect("dir")
+        .join("auth.json");
+    assert_eq!(
+        std::fs::read_link(&slot).expect("adopted onto cx1"),
+        cx1_store
+    );
+
+    switch_codex_profile("cx2").expect("switch onto a dormant holder");
+
+    assert_eq!(
+        std::fs::read_link(&slot).expect("still a link"),
+        profile_dir(&crate::profile::ProfileName::from("cx2"))
+            .expect("dir")
+            .join("auth.json"),
+        "the slot now follows cx2"
+    );
+}
+
+/// The current holder's live session blocks the relink outright: closing it
+/// out from under a running codex would hand that process a chain it never
+/// asked for and cannot use. Same posture `codex_login_capture` already takes
+/// on the analogous case.
+#[test]
+fn switch_codex_refuses_while_the_current_holder_has_a_live_session() {
+    let home = HomeSandbox::new();
+    write_operator_codex(&home, Some(OPERATOR_AUTH), None);
+    codex_login_capture("cx1").expect("capture seeds the operator link");
+    crate::codex_profiles::CodexState::update(|state| {
+        state.add_profile("cx2");
+        state.set_active(Some("cx1"));
+        Ok(())
+    })
+    .expect("roster cx2, mark cx1 active");
+    crate::testutil::write_codex_store("cx2", "{}");
+    let slot = home.home().join(".codex").join("auth.json");
+    let cx1_store = profile_dir(&crate::profile::ProfileName::from("cx1"))
+        .expect("dir")
+        .join("auth.json");
+    let pid = crate::testutil::arm_live_session(home.home(), "cx1");
+
+    let err = switch_codex_profile("cx2").expect_err("a live session on cx1 refuses");
+    assert!(
+        err.to_string().contains("'cx1' has a live codex session"),
+        "{err}"
+    );
+    assert_eq!(
+        std::fs::read_link(&slot).expect("untouched"),
+        cx1_store,
+        "a refused relink leaves the operator slot exactly as found"
+    );
+    assert_eq!(
+        crate::codex_profiles::CodexState::load()
+            .expect("load")
+            .active_profile()
+            .map(|n| n.as_str()),
+        Some("cx1"),
+        "the marker does not move either — the refusal is atomic"
+    );
+
+    drop(pid);
+    switch_codex_profile("cx2").expect("once the session ends the same switch goes through");
+}
+
+/// A real, uncaptured login at the slot refuses exactly the shape capture
+/// refuses on — clauth does not know what it would be destroying, so it
+/// leaves the file alone and names the fix.
+#[test]
+fn switch_codex_refuses_a_real_uncaptured_operator_login() {
+    let home = HomeSandbox::new();
+    write_codex_state("profiles = [\"cx2\"]\n");
+    crate::testutil::write_codex_store("cx2", "{}");
+    write_operator_codex(&home, Some(OPERATOR_AUTH), None);
+    let slot = home.home().join(".codex").join("auth.json");
+
+    let err = switch_codex_profile("cx2").expect_err("a real file refuses");
+    assert!(
+        err.to_string().contains("holds a real, uncaptured login"),
+        "{err}"
+    );
+    assert_eq!(
+        std::fs::read(&slot).expect("untouched"),
+        OPERATOR_AUTH.as_bytes(),
+        "the refusal must not destroy a login nobody told clauth to keep"
+    );
+    assert_eq!(
+        crate::codex_profiles::CodexState::load()
+            .expect("load")
+            .active_profile(),
+        None,
+        "the marker does not move on a refused switch"
+    );
+}
+
+/// A symlink clauth does not recognize (not one of its own stores) refuses
+/// rather than guessing what it is or overwriting it.
+#[cfg(unix)]
+#[test]
+fn switch_codex_refuses_an_unrecognized_operator_symlink() {
+    let home = HomeSandbox::new();
+    write_codex_state("profiles = [\"cx2\"]\n");
+    crate::testutil::write_codex_store("cx2", "{}");
+    let operator = home.home().join(".codex");
+    std::fs::create_dir_all(&operator).expect("mkdir .codex");
+    let slot = operator.join("auth.json");
+    let odd_target = home.home().join("somewhere-else.json");
+    std::fs::write(&odd_target, b"{}").expect("write odd target");
+    std::os::unix::fs::symlink(&odd_target, &slot).expect("seed odd link");
+
+    let err = switch_codex_profile("cx2").expect_err("an unrecognized symlink refuses");
+    assert!(
+        err.to_string()
+            .contains("is a symlink clauth does not recognize"),
+        "{err}"
+    );
+    assert_eq!(
+        std::fs::read_link(&slot).expect("untouched"),
+        odd_target,
+        "the refusal leaves the odd link exactly as found"
+    );
+    assert_eq!(
+        crate::codex_profiles::CodexState::load()
+            .expect("load")
+            .active_profile(),
+        None,
+        "the marker does not move on a refused switch"
+    );
+}
+
+/// The slot already following the target is a clean no-op even when the
+/// on-disk marker disagrees — the marker catches up without a second write to
+/// the link.
+#[test]
+fn switch_codex_self_heals_a_stale_marker_when_the_slot_already_matches() {
+    let home = HomeSandbox::new();
+    write_operator_codex(&home, Some(OPERATOR_AUTH), None);
+    codex_login_capture("cx2").expect("capture seeds the operator link onto cx2");
+    // The marker disagrees with reality: cx1 reads active, but the slot has
+    // followed cx2 ever since the capture above.
+    crate::codex_profiles::CodexState::update(|state| {
+        state.add_profile("cx1");
+        state.set_active(Some("cx1"));
+        Ok(())
+    })
+    .expect("seed a stale marker");
+    crate::testutil::write_codex_store("cx1", "{}");
+    let slot = home.home().join(".codex").join("auth.json");
+    let cx2_store = profile_dir(&crate::profile::ProfileName::from("cx2"))
+        .expect("dir")
+        .join("auth.json");
+
+    switch_codex_profile("cx2").expect("switch onto what the slot already follows");
+
+    assert_eq!(
+        std::fs::read_link(&slot).expect("still linked"),
+        cx2_store,
+        "the already-correct link is left exactly as found"
+    );
+    assert_eq!(
+        crate::codex_profiles::CodexState::load()
+            .expect("load")
+            .active_profile()
+            .map(|n| n.as_str()),
+        Some("cx2"),
+        "the marker catches up to what the slot already says"
+    );
 }
 
 /// The codex delete mirrors the claude one's order (dir before state) and

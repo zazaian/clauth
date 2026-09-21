@@ -4840,6 +4840,92 @@ fn switch_codex_moves_only_the_codex_active_marker() {
     );
 }
 
+/// The confirm handler goes through the shared `actions::switch_codex_profile`
+/// — MZ's ruling 2026-09-21 that a TUI selection must re-point the live
+/// `~/.codex/auth.json` the way claude's own switch swaps its credentials
+/// file, not just move the marker.
+#[test]
+fn switch_codex_relinks_the_operator_slot_through_the_tui() {
+    let home = crate::testutil::HomeSandbox::new();
+    let mut app = app_with_profiles(&["a"], Some("a"));
+    crate::codex_profiles::CodexState::update(|state| {
+        state.add_profile("cx1");
+        state.add_profile("cx2");
+        state.set_active(Some("cx1"));
+        Ok(())
+    })
+    .expect("seed codex state");
+    crate::testutil::write_codex_store("cx2", "{}");
+
+    super::run_confirm_action(
+        &mut app,
+        super::ConfirmAction::SwitchCodex("cx2".to_string()),
+    );
+
+    let slot = home.home().join(".codex").join("auth.json");
+    assert_eq!(
+        std::fs::read_link(&slot).expect("the TUI switch relinks the operator slot"),
+        crate::profile::profile_dir(&crate::profile::ProfileName::from("cx2"))
+            .expect("dir")
+            .join("auth.json"),
+    );
+    assert!(
+        app.toasts
+            .iter()
+            .any(|t| t.body.contains("switched codex to 'cx2'")),
+        "got {:?}",
+        app.toasts
+    );
+}
+
+/// A refused relink (a live session on the current holder) surfaces as a
+/// danger toast instead of silently leaving the switch half-done.
+#[cfg(unix)]
+#[test]
+fn switch_codex_failure_toasts_danger_and_leaves_the_marker() {
+    let home = crate::testutil::HomeSandbox::new();
+    let mut app = app_with_profiles(&["a"], Some("a"));
+    crate::codex_profiles::CodexState::update(|state| {
+        state.add_profile("cx1");
+        state.add_profile("cx2");
+        state.set_active(Some("cx1"));
+        Ok(())
+    })
+    .expect("seed codex state");
+    crate::testutil::write_codex_store("cx1", "{}");
+    crate::testutil::write_codex_store("cx2", "{}");
+    let operator = home.home().join(".codex");
+    std::fs::create_dir_all(&operator).expect("mkdir .codex");
+    let slot = operator.join("auth.json");
+    let cx1_store = crate::profile::profile_dir(&crate::profile::ProfileName::from("cx1"))
+        .expect("dir")
+        .join("auth.json");
+    std::os::unix::fs::symlink(&cx1_store, &slot).expect("seed link to cx1");
+    let pid = crate::testutil::arm_live_session(home.home(), "cx1");
+
+    super::run_confirm_action(
+        &mut app,
+        super::ConfirmAction::SwitchCodex("cx2".to_string()),
+    );
+
+    assert!(
+        app.toasts
+            .iter()
+            .any(|t| t.body.contains("switch failed") && t.body.contains("cx1")),
+        "got {:?}",
+        app.toasts
+    );
+    assert_eq!(
+        crate::codex_profiles::CodexState::load()
+            .expect("load")
+            .active_profile()
+            .map(|n| n.as_str().to_string()),
+        Some("cx1".to_string()),
+        "a refused relink must not move the marker either"
+    );
+    drop(pid);
+}
+
 // ── theme tier cycle ────────────────────────────────────────────────────────
 
 #[test]

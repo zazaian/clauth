@@ -1150,15 +1150,18 @@ pub(crate) fn delete_profile(
     Ok(())
 }
 
-/// `clauth <name>` resolving to a codex profile: move the codex active marker
-/// and nothing else. The state slot is the whole switch — nothing global is
-/// installed for codex, no live credentials link, no Keychain mirror; codex
-/// sessions (later in the series) bind `auth.json` at start through their own
-/// home, which is what makes this the parity map's "session-boundary" switch.
-/// Membership is re-made against the state [`CodexState::update`] loaded
-/// under the lock, so a concurrent delete can't be switched onto. A
-/// quarantined chain refuses the way a disabled claude account does: the
-/// slot would name an account no session can authenticate as.
+/// `clauth <name>` resolving to a codex profile: move the codex active
+/// marker AND re-point the operator's `~/.codex/auth.json` at `name`'s own
+/// store — the codex twin of how claude's own switch swaps its live
+/// credentials file in place (MZ's explicit ruling, 2026-09-21, overriding
+/// the series' original "session-boundary only" design below). Membership
+/// is re-made against the state [`CodexState::update`] loaded under the
+/// lock, so a concurrent delete can't be switched onto. A quarantined chain
+/// refuses the way a disabled claude account does: the slot would name an
+/// account no session can authenticate as. [`relink_operator_codex_slot`]
+/// runs INSIDE the closure, before the marker moves in memory — a refused
+/// relink propagates out through `update`'s `?` before the dirty check ever
+/// runs, so a failed switch changes neither the file nor the marker.
 pub(crate) fn switch_codex_profile(name: &str) -> Result<()> {
     crate::codex_profiles::CodexState::update(|state| {
         if !state.holds(name) {
@@ -1170,9 +1173,72 @@ pub(crate) fn switch_codex_profile(name: &str) -> Result<()> {
         if state.active_profile().map(ProfileName::as_str) == Some(name) {
             return Ok(());
         }
+        relink_operator_codex_slot(name)?;
         state.set_active(Some(name));
         Ok(())
     })
+}
+
+/// Re-point the operator's `~/.codex/auth.json` at `name`'s own store —
+/// [`switch_codex_profile`]'s file-level half. Codex's design otherwise never
+/// touches this slot outside capture (decision 8: one physical file, one
+/// link, set once), specifically because a COPY would double a single-use
+/// rotating chain; a symlink RE-POINT carries none of that risk, since
+/// `name`'s own chain at `profiles/<name>/auth.json` is untouched either
+/// way — only which profile the shared slot currently follows moves.
+///
+/// Same safety posture [`codex_login_capture`] already accepts for the
+/// analogous case:
+/// - a live CLAUTH session on whoever currently holds the slot refuses —
+///   nothing here (or in capture) tracks a bare `codex` run outside clauth,
+///   which is a residual gap this shares with capture, not a new one;
+/// - a real, unmanaged file (nothing clauth ever captured) refuses rather
+///   than silently destroying a login nobody told clauth to keep;
+/// - a symlink clauth does not recognize (points somewhere odd) refuses
+///   rather than guessing what it is.
+fn relink_operator_codex_slot(name: &str) -> Result<()> {
+    let operator = codex_operator_home()?;
+    let slot = operator.join("auth.json");
+    match std::fs::symlink_metadata(&slot) {
+        Err(_) => {} // absent: nothing to protect, link fresh below.
+        Ok(meta) if meta.file_type().is_symlink() => {
+            let target = std::fs::read_link(&slot)
+                .with_context(|| format!("failed to read {}", slot.display()))?;
+            match clauth_auth_store_owner(&target) {
+                Some(holder) if holder.eq_ignore_ascii_case(name) => return Ok(()),
+                Some(holder) => {
+                    if crate::runtime::has_live_session(&ProfileName::from(holder.clone())) {
+                        bail!(
+                            "'{holder}' has a live codex session holding {} — close it before switching",
+                            slot.display()
+                        );
+                    }
+                }
+                None => bail!(
+                    "{} is a symlink clauth does not recognize — leaving it alone; remove it \
+                     yourself before switching can relink it",
+                    slot.display()
+                ),
+            }
+        }
+        Ok(_) => bail!(
+            "{} holds a real, uncaptured login — run `clauth login {name} --codex` first if you \
+             want to keep it, or remove the file yourself, before switching can relink it",
+            slot.display()
+        ),
+    }
+    // A browser-login-only roster (`clauth login <name> --codex --browser`)
+    // never touches the operator home, so this switch can be its first —
+    // `create_dir_all` is a no-op wherever a real `codex login` (or an
+    // earlier capture) already made the directory.
+    std::fs::create_dir_all(&operator)
+        .with_context(|| format!("failed to create {}", operator.display()))?;
+    let store = crate::profile::profile_subpath(&ProfileName::from(name), "auth.json")?;
+    if adopt_operator_auth_slot(&slot, &store) {
+        Ok(())
+    } else {
+        bail!("could not create the symlink (no symlink support on this host)")
+    }
 }
 
 /// `clauth delete <name>` for a codex profile. Same shape as the claude

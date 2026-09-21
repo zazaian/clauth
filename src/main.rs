@@ -218,6 +218,7 @@ fn dispatch(cli: Cli) -> Result<()> {
     let theme_override = cli.theme.map(|t| match t {
         ThemeArg::Full => tui::theme::Tier::Full,
         ThemeArg::Compatible => tui::theme::Tier::Compatible,
+        ThemeArg::Dark => tui::theme::Tier::Dark,
     });
 
     let Some(command) = cli.command else {
@@ -2215,6 +2216,7 @@ fn cmd_tui(theme_override: Option<tui::theme::Tier>) -> Result<()> {
     let config_tier = config.state.theme.map(|t| match t {
         ThemeName::Full => tui::theme::Tier::Full,
         ThemeName::Compatible => tui::theme::Tier::Compatible,
+        ThemeName::Dark => tui::theme::Tier::Dark,
     });
     tui::theme::init(theme_override.or(config_tier));
     // herdr injects `HERDR_ENV=1` into every pane it manages, and only the

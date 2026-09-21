@@ -4705,6 +4705,16 @@ fn global_config_cursor_wraps() {
     assert_eq!(app.global_config_cursor, 0, "Down from last wraps to first");
 }
 
+// ── theme tier cycle ────────────────────────────────────────────────────────
+
+#[test]
+fn next_theme_tier_cycles_full_compatible_dark_and_wraps() {
+    use crate::tui::theme::Tier;
+    assert_eq!(super::next_theme_tier(Tier::Full), Tier::Compatible);
+    assert_eq!(super::next_theme_tier(Tier::Compatible), Tier::Dark);
+    assert_eq!(super::next_theme_tier(Tier::Dark), Tier::Full);
+}
+
 // ── divergence default ─────────────────────────────────────────────────────
 
 use crate::profile::DivergenceChoice;

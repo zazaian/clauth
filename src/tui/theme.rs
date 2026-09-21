@@ -2,6 +2,9 @@
 //!
 //! Catppuccin Mocha is the only palette. Two capability tiers select the color
 //! depth: `full` uses 24-bit RGB; `compatible` uses the nearest xterm-256 index.
+//! A third tier, `dark`, is `full`'s exact palette with [`bg`] swapped to true
+//! black — every other color function reads it as `full` ([`pick`]), so it is
+//! not a second palette to keep in sync, just one function's override.
 //! Every color in the TUI comes from this module — raw `Color::Rgb` or raw index
 //! values anywhere else are a bug.
 //!
@@ -26,6 +29,10 @@ pub(crate) enum Tier {
     Full,
     /// Nearest xterm-256 palette index. Safe on any xterm-compatible terminal.
     Compatible,
+    /// `Full`, background swapped to true black (see the module doc). An
+    /// explicit CLI / config choice only — auto-detect never picks it, since
+    /// `$COLORTERM` says nothing about a background preference.
+    Dark,
 }
 
 impl Tier {
@@ -35,6 +42,7 @@ impl Tier {
         match self {
             Tier::Full => 1,
             Tier::Compatible => 2,
+            Tier::Dark => 3,
         }
     }
 
@@ -42,6 +50,7 @@ impl Tier {
         match code {
             1 => Some(Tier::Full),
             2 => Some(Tier::Compatible),
+            3 => Some(Tier::Dark),
             _ => None,
         }
     }
@@ -112,7 +121,7 @@ pub(crate) fn restore_tier(snapshot: Option<Tier>) {
 #[inline]
 fn pick(full: Color, compatible: Color) -> Color {
     match tier() {
-        Tier::Full => full,
+        Tier::Full | Tier::Dark => full,
         Tier::Compatible => compatible,
     }
 }
@@ -120,6 +129,9 @@ fn pick(full: Color, compatible: Color) -> Color {
 // ── Surfaces ──────────────────────────────────────────────────────────────────
 #[inline]
 pub(crate) fn bg() -> Color {
+    if tier() == Tier::Dark {
+        return Color::Rgb(0, 0, 0);
+    }
     pick(Color::Rgb(30, 30, 46), Color::Indexed(235))
 }
 #[inline]
@@ -205,7 +217,7 @@ pub(crate) fn blend_over(beneath: Color, over: Color, alpha: f64) -> Color {
     let (Color::Rgb(br, bg, bb), Color::Rgb(or, og, ob)) = (beneath, over) else {
         return over;
     };
-    if tier() != Tier::Full {
+    if !matches!(tier(), Tier::Full | Tier::Dark) {
         return over;
     }
     let a = alpha.clamp(0.0, 1.0);
@@ -219,7 +231,7 @@ pub(crate) fn blend_over(beneath: Color, over: Color, alpha: f64) -> Color {
 /// `full`: `─●`  `compatible`: `[on]`
 pub(crate) fn toggle_on() -> &'static str {
     match tier() {
-        Tier::Full => "─●",
+        Tier::Full | Tier::Dark => "─●",
         Tier::Compatible => "[on]",
     }
 }
@@ -228,7 +240,7 @@ pub(crate) fn toggle_on() -> &'static str {
 /// `full`: `○─`  `compatible`: `[off]`
 pub(crate) fn toggle_off() -> &'static str {
     match tier() {
-        Tier::Full => "○─",
+        Tier::Full | Tier::Dark => "○─",
         Tier::Compatible => "[off]",
     }
 }
@@ -318,3 +330,7 @@ pub(crate) fn info() -> Style {
 pub(crate) fn success() -> Style {
     Style::default().fg(success_color())
 }
+
+#[cfg(test)]
+#[path = "../../tests/inline/tui_theme.rs"]
+mod tests;

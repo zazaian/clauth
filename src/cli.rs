@@ -43,14 +43,17 @@ pub(crate) struct Cli {
     pub(crate) command: Option<Command>,
 }
 
-/// `--theme`'s two tiers. Auto-detection (`$COLORTERM`) picks one when the flag
-/// and the config-file key are both absent.
+/// `--theme`'s tiers. Auto-detection (`$COLORTERM`) picks `full` or
+/// `compatible` when the flag and the config-file key are both absent; `dark`
+/// is never auto-detected, only chosen explicitly.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub(crate) enum ThemeArg {
     /// 24-bit truecolor. Auto-detected when $COLORTERM is truecolor or 24bit.
     Full,
     /// The xterm-256 palette, safe on every terminal.
     Compatible,
+    /// `full`, with the background swapped to true black.
+    Dark,
 }
 
 #[derive(Subcommand, Debug)]

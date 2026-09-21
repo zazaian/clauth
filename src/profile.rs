@@ -613,12 +613,14 @@ impl Profile {
 }
 
 /// Theme tier stored in `profiles.toml`. Serialized as a lowercase string so
-/// the file stays human-readable: `theme = "full"` / `theme = "compatible"`.
+/// the file stays human-readable: `theme = "full"` / `theme = "compatible"` /
+/// `theme = "dark"`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum ThemeName {
     Full,
     Compatible,
+    Dark,
 }
 
 /// How a usage window's reset renders across the TUI (`AppState.reset_display`,

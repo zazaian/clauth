@@ -380,6 +380,7 @@ fn detail_row(
             &[
                 ("full", tier == Tier::Full),
                 ("compatible", tier == Tier::Compatible),
+                ("dark", tier == Tier::Dark),
             ],
             selected,
         ),

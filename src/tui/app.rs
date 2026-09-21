@@ -5121,14 +5121,21 @@ fn run_global_config_row(app: &mut App, row: GlobalConfigRow) {
 
 /// Cycle the active theme tier, persist it to `[theme]`, and live-swap the
 /// palette so the next frame renders in the new tier without a restart.
-fn cycle_theme(app: &mut App) {
-    let next = match theme::tier() {
+/// Theme cycle order: `full` → `compatible` → `dark` → `full`.
+fn next_theme_tier(current: theme::Tier) -> theme::Tier {
+    match current {
         theme::Tier::Full => theme::Tier::Compatible,
-        theme::Tier::Compatible => theme::Tier::Full,
-    };
+        theme::Tier::Compatible => theme::Tier::Dark,
+        theme::Tier::Dark => theme::Tier::Full,
+    }
+}
+
+fn cycle_theme(app: &mut App) {
+    let next = next_theme_tier(theme::tier());
     let name = match next {
         theme::Tier::Full => ThemeName::Full,
         theme::Tier::Compatible => ThemeName::Compatible,
+        theme::Tier::Dark => ThemeName::Dark,
     };
     {
         let mut cfg = app.config();

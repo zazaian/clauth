@@ -4705,6 +4705,141 @@ fn global_config_cursor_wraps() {
     assert_eq!(app.global_config_cursor, 0, "Down from last wraps to first");
 }
 
+// ── overview: unified claude+codex cursor ──────────────────────────────────
+
+fn codex_row(name: &str, active: bool) -> crate::tui::app::CodexRow {
+    crate::tui::app::CodexRow {
+        name: crate::profile::ProfileName::from(name),
+        active,
+        broken: false,
+        plan: None,
+        five_hour: None,
+        seven_day: None,
+    }
+}
+
+fn app_with_profiles(names: &[&str], active: Option<&str>) -> App {
+    use crate::profile::{AppConfig, AppState, Profile};
+    App::new(AppConfig {
+        state: AppState {
+            active_profile: active.map(Into::into),
+            ..AppState::default()
+        },
+        profiles: names
+            .iter()
+            .map(|n| Profile::new(n.to_string(), None, None))
+            .collect(),
+    })
+}
+
+/// `overview_slots` follows the harness filter exactly: All sees both
+/// sections in on-screen order, Claude/Codex see only their own — the same
+/// rows `draw_overview_accounts` would draw, so stepping never lands on a
+/// row the screen does not show.
+#[test]
+fn overview_slots_respects_the_harness_filter() {
+    let _home = crate::testutil::HomeSandbox::new();
+    let mut app = app_with_profiles(&["a", "b"], None);
+    app.codex_rows = vec![codex_row("cx1", false)];
+
+    app.harness_filter = super::HarnessFilter::All;
+    assert_eq!(
+        super::overview_slots(&app),
+        vec![
+            super::OverviewSlot::Claude(0),
+            super::OverviewSlot::Claude(1),
+            super::OverviewSlot::Codex(0),
+        ]
+    );
+
+    app.harness_filter = super::HarnessFilter::Claude;
+    assert_eq!(
+        super::overview_slots(&app),
+        vec![
+            super::OverviewSlot::Claude(0),
+            super::OverviewSlot::Claude(1)
+        ]
+    );
+
+    app.harness_filter = super::HarnessFilter::Codex;
+    assert_eq!(
+        super::overview_slots(&app),
+        vec![super::OverviewSlot::Codex(0)]
+    );
+}
+
+/// The unified cursor wraps across BOTH sections as one circular list:
+/// stepping down off the last claude row lands on the first codex row, and
+/// stepping down off the last codex row wraps back to the first claude row
+/// — the continuous top-to-bottom feel the claude-only cursor already had.
+#[test]
+fn step_overview_cursor_wraps_across_both_sections() {
+    let _home = crate::testutil::HomeSandbox::new();
+    let mut app = app_with_profiles(&["a"], None);
+    app.codex_rows = vec![codex_row("cx1", false), codex_row("cx2", false)];
+    assert_eq!(app.profile_cursor, 0);
+    assert_eq!(app.codex_cursor, None);
+
+    super::step_overview_cursor(&mut app, 1);
+    assert_eq!(
+        app.codex_cursor,
+        Some(0),
+        "off the last claude row, onto codex"
+    );
+
+    super::step_overview_cursor(&mut app, 1);
+    assert_eq!(app.codex_cursor, Some(1));
+
+    super::step_overview_cursor(&mut app, 1);
+    assert_eq!(
+        app.codex_cursor, None,
+        "off the last codex row, wraps back to claude"
+    );
+    assert_eq!(app.profile_cursor, 0);
+
+    super::step_overview_cursor(&mut app, -1);
+    assert_eq!(
+        app.codex_cursor,
+        Some(1),
+        "stepping up from the first claude row wraps to the LAST codex row"
+    );
+}
+
+/// The whole point: switching codex's active marker must never touch
+/// claude's, and vice versa — two independent single-selections sharing a
+/// screen, not one global "the active thing".
+#[test]
+fn switch_codex_moves_only_the_codex_active_marker() {
+    let _home = crate::testutil::HomeSandbox::new();
+    let mut app = app_with_profiles(&["a"], Some("a"));
+    crate::codex_profiles::CodexState::update(|state| {
+        state.add_profile("cx1");
+        state.add_profile("cx2");
+        state.set_active(Some("cx1"));
+        Ok(())
+    })
+    .expect("seed codex state");
+
+    super::run_confirm_action(
+        &mut app,
+        super::ConfirmAction::SwitchCodex("cx2".to_string()),
+    );
+
+    assert_eq!(
+        crate::codex_profiles::CodexState::load()
+            .expect("load")
+            .active_profile()
+            .map(|n| n.as_str().to_string()),
+        Some("cx2".to_string()),
+        "codex's active marker moved"
+    );
+    assert_eq!(
+        app.config().state.active_profile.as_deref(),
+        Some("a"),
+        "claude's active profile must be untouched by a codex switch"
+    );
+}
+
 // ── theme tier cycle ────────────────────────────────────────────────────────
 
 #[test]
@@ -11820,14 +11955,18 @@ fn c_on_the_overview_cycles_the_harness_filter_and_leaves_count_cache_alone() {
     assert_eq!(app.config().state.count_cache, count_cache);
 }
 
-// ── the codex-only view disarms every key bound to the claude selection ──────
+// ── the codex-only view and the claude-only keys ─────────────────────────────
 
-/// With the claude rows hidden, reorder, cursor, switch and the action menu
-/// would act on a row the screen does not show. Each is inert with a toast
-/// saying why, and every filter that shows the claude rows (`All` and `Claude`
-/// alike) re-arms all four.
+/// Reorder and the action menu (`a`) are genuinely claude-only concepts —
+/// codex has neither — so they stay inert with a toast saying why whenever
+/// claude is filtered out, regardless of what codex holds. Cursor (↑↓) and
+/// switch (⏎) are different: this fixture carries no codex rows, so they
+/// read as inert here too, but that is this EMPTY roster's doing, not the
+/// filter's — `codex_only_view_with_rows_arms_cursor_and_switch_on_codex`
+/// right below is the fixture where they are not. Every filter that shows
+/// the claude rows (`All` and `Claude` alike) re-arms all four.
 #[test]
-fn the_codex_only_view_disarms_the_claude_selection_keys() {
+fn the_codex_only_view_disarms_the_claude_only_keys() {
     use super::{HarnessFilter, KeyEvent, KeyModifiers, Modal, handle_key};
     let _home = crate::testutil::HomeSandbox::new();
     let mut app = app_with_unlinked_profiles(vec![
@@ -12168,4 +12307,33 @@ fn the_day_collision_warning_fires_on_the_edge_only() {
     }
     warn_day_claim_notices(&mut app);
     assert_eq!(app.toasts.len(), 2, "a collision re-introduced warns again");
+}
+
+/// The complement to the test above: with a codex row actually present, the
+/// SAME codex-only filter arms cursor and switch onto it — proving the prior
+/// test's inertness was its empty codex roster's doing, not a blanket
+/// "codex view is read-only" policy (there is no such policy anymore).
+#[test]
+fn codex_only_view_with_rows_arms_cursor_and_switch_on_codex() {
+    use super::{HarnessFilter, Modal, handle_key};
+    let _home = crate::testutil::HomeSandbox::new();
+    let mut app = app_with_unlinked_profiles(vec![crate::testutil::blank_profile(
+        &crate::profile::ProfileName::from("a"),
+    )]);
+    app.tab = Tab::Overview;
+    app.harness_filter = HarnessFilter::Codex;
+    app.codex_rows = vec![codex_row("cx1", false)];
+
+    handle_key(&mut app, crate::testutil::key(KeyCode::Down));
+    assert_eq!(
+        app.codex_cursor,
+        Some(0),
+        "claude hidden, one codex row: down lands on it"
+    );
+
+    handle_key(&mut app, crate::testutil::key(KeyCode::Enter));
+    assert!(
+        matches!(app.modals.last(), Some(Modal::Confirm(_))),
+        "switch is armed on the codex row, not disarmed by the filter"
+    );
 }

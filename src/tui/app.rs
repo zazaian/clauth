@@ -564,6 +564,11 @@ pub(crate) enum ConfirmAction {
     /// byte formats differ), so this path forces the live link onto the target.
     AdoptDivergence(Box<CaptureSnapshot>, String),
     Switch(String),
+    /// Move the codex active marker (Overview's codex selection, ⏎). Unlike
+    /// `Switch`, this is never gated on an in-flight/busy check — a codex
+    /// switch is a plain `codex-profiles.toml` write, not a credential swap
+    /// with an async gate to race.
+    SwitchCodex(String),
     /// Confirm before discarding CC's freshly-written credentials and relinking.
     DiscardDivergence(String),
     /// Force-rotate all refresh tokens; active sessions may be logged out.
@@ -1573,13 +1578,15 @@ pub(crate) enum MainItemKind {
     Profile(usize),
 }
 
-/// Which harness the Overview shows. A VIEW filter only: selection and every
-/// action stay bound to the claude list, because a codex account has no
-/// `Profile` record for them to act on and clauth switches it through its own
-/// CLI verb. So the codex section renders READ-ONLY, and while the claude rows
-/// are hidden every key bound to the selection is inert
-/// ([`claude_rows_hidden`]) rather than acting on a row the screen does not
-/// show.
+/// Which harness the Overview shows. A VIEW filter only, same as it always
+/// was — but selection and Enter now span both sections (`App::codex_cursor`
+/// is the codex twin of `profile_cursor`, since a codex account still has no
+/// `Profile` record in `config.profiles` for the claude-only cursor to
+/// index). Up/Down/Enter target whichever rows are actually on screen: while
+/// this filter hides a whole section, its rows are simply absent from the
+/// walk, the same way a filtered-out claude row would be if that existed.
+/// `claude_rows_hidden` still gates the claude-only actions ('a' to add,
+/// etc.) that have no codex equivalent at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum HarnessFilter {
     #[default]
@@ -1821,7 +1828,18 @@ pub(crate) struct App {
 
     /// Selected account index, shared across Overview/Usage/Setup tabs.
     /// On Setup may also rest on the trailing `+ new` row (== profile_count).
+    /// Stays a valid claude index at all times, INCLUDING while
+    /// [`Self::codex_cursor`] holds Overview's focus — Usage/Setup/Fallback
+    /// read it directly and know nothing of codex, so it must never be
+    /// asked to double as a codex index.
     pub(crate) profile_cursor: usize,
+    /// Overview-only focus overlay: `None` while the claude list holds focus
+    /// (the ordinary case, everywhere else in the app); `Some(i)` while row
+    /// `i` of `app.codex_rows` does. Up/Down/Enter in `handle_overview_key`
+    /// are the only reader and writer — no other tab's key handler or render
+    /// pass consults it, which is what keeps `profile_cursor` safe to share
+    /// the way it already was.
+    pub(crate) codex_cursor: Option<usize>,
     /// Which harness the Overview lists (`c` cycles). A view filter only — see
     /// [`HarnessFilter`].
     pub(crate) harness_filter: HarnessFilter,
@@ -2328,6 +2346,7 @@ impl App {
             help_scroll: 0,
             help_max_scroll: std::cell::Cell::new(0),
             profile_cursor: 0,
+            codex_cursor: None,
             config_focus: ConfigFocus::Profiles,
             config_action_cursor: 0,
             fallback_focus: FallbackFocus::Chain,
@@ -3288,6 +3307,20 @@ pub(crate) fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('c') if app.tab == Tab::Overview => {
             app.disarm_quit();
             app.harness_filter = app.harness_filter.next();
+            // Keep the cursor on a row this frame will actually show, rather
+            // than leaving it stale until the next Up/Down self-heals it
+            // (step_overview_cursor degrades gracefully, but nothing repaints
+            // in between). Claude hidden: fall back to the claude cursor.
+            // Claude hidden with codex now the only section: jump onto it —
+            // otherwise nothing would render as selected at all.
+            if !app.harness_filter.shows_codex() {
+                app.codex_cursor = None;
+            } else if !app.harness_filter.shows_claude()
+                && app.codex_cursor.is_none()
+                && !app.codex_rows.is_empty()
+            {
+                app.codex_cursor = Some(0);
+            }
             return;
         }
         KeyCode::Char('a') => {
@@ -3599,16 +3632,124 @@ fn claude_rows_hidden(app: &mut App) -> bool {
 }
 
 fn handle_overview_key(app: &mut App, key: KeyEvent) {
-    let count = app.profile_count();
     match key.code {
-        KeyCode::Up | KeyCode::Down | KeyCode::Enter if claude_rows_hidden(app) => {}
-        KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => reorder_main_cursor(app, -1),
-        KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => reorder_main_cursor(app, 1),
-        KeyCode::Up => step_profile_cursor(app, -1, count),
-        KeyCode::Down => step_profile_cursor(app, 1, count),
-        KeyCode::Enter => activate_main_item(app),
+        // Reordering is a claude-only concept — `config.profiles`' own list
+        // order — so it stays inert while codex holds focus rather than
+        // acting on the wrong roster (codex has no reorder at all).
+        // `claude_rows_hidden`'s toast only fires when reached, so a codex
+        // selection (checked first, no side effect) short-circuits it
+        // silently — obviously inert needs no explanation, only "claude is
+        // filtered out" does.
+        KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            if app.codex_cursor.is_none() && !claude_rows_hidden(app) {
+                reorder_main_cursor(app, -1);
+            }
+        }
+        KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            if app.codex_cursor.is_none() && !claude_rows_hidden(app) {
+                reorder_main_cursor(app, 1);
+            }
+        }
+        KeyCode::Up => step_overview_cursor(app, -1),
+        KeyCode::Down => step_overview_cursor(app, 1),
+        KeyCode::Enter => activate_overview_item(app),
         _ => {}
     }
+}
+
+/// One Overview row, across either harness — the unit [`step_overview_cursor`]
+/// walks and [`activate_overview_item`] dispatches on. Distinct from
+/// [`MainItemKind`], which stays claude-only and keeps backing the tabs that
+/// share `profile_cursor`; this exists so Overview alone can treat both
+/// sections as one continuous list without teaching those other tabs about
+/// codex.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OverviewSlot {
+    Claude(usize),
+    Codex(usize),
+}
+
+/// Every slot the current harness filter actually shows, in on-screen
+/// order: claude rows first, then codex — matching `draw_overview_accounts`.
+/// A hidden section contributes nothing, exactly as if its rows did not
+/// exist, so stepping and wraparound never land on a row the screen is not
+/// showing.
+fn overview_slots(app: &App) -> Vec<OverviewSlot> {
+    let mut slots = Vec::new();
+    if app.harness_filter.shows_claude() {
+        slots.extend((0..app.profile_count()).map(OverviewSlot::Claude));
+    }
+    if app.harness_filter.shows_codex() {
+        slots.extend((0..app.codex_rows.len()).map(OverviewSlot::Codex));
+    }
+    slots
+}
+
+fn current_overview_slot(app: &App) -> OverviewSlot {
+    match app.codex_cursor {
+        Some(i) => OverviewSlot::Codex(i),
+        None => OverviewSlot::Claude(app.profile_cursor),
+    }
+}
+
+fn enter_overview_slot(app: &mut App, slot: OverviewSlot) {
+    match slot {
+        OverviewSlot::Claude(i) => {
+            app.profile_cursor = i;
+            app.codex_cursor = None;
+        }
+        OverviewSlot::Codex(i) => app.codex_cursor = Some(i),
+    }
+}
+
+/// Step the unified cursor by `delta`, wrapping across BOTH sections as one
+/// circular list — the continuous top-to-bottom feel the claude-only cursor
+/// already had, now spanning whichever rows the harness filter shows. A
+/// stale `codex_cursor` left over from a filter change that hid codex is not
+/// found in `slots` and falls back to position 0, landing safely on the
+/// first visible row rather than panicking.
+fn step_overview_cursor(app: &mut App, delta: i32) {
+    let slots = overview_slots(app);
+    if slots.is_empty() {
+        return;
+    }
+    let current = current_overview_slot(app);
+    let pos = slots.iter().position(|s| *s == current).unwrap_or(0);
+    let len = slots.len() as i32;
+    let next = (pos as i32 + delta).rem_euclid(len) as usize;
+    enter_overview_slot(app, slots[next]);
+}
+
+fn activate_overview_item(app: &mut App) {
+    match app.codex_cursor {
+        Some(idx) => request_switch_to_codex(app, idx),
+        // `activate_main_item` assumes the claude list is on screen (it
+        // always was, before codex could hold focus) — a filter that hides
+        // claude with no codex row to redirect onto (nothing for
+        // `step_overview_cursor` to have moved this to) must not fall
+        // through to it.
+        None if app.harness_filter.shows_claude() => activate_main_item(app),
+        None => {}
+    }
+}
+
+/// Request a codex switch; no-ops if already active — the same guard
+/// `request_switch_to` applies for claude, so a landed switch is always a
+/// real change, never a confirm-and-no-op round trip.
+fn request_switch_to_codex(app: &mut App, idx: usize) {
+    let Some(row) = app.codex_rows.get(idx) else {
+        return;
+    };
+    if row.active {
+        return;
+    }
+    let name = row.name.clone();
+    app.modals.push(Modal::Confirm(ConfirmState {
+        message: format!("switch codex to '{name}'?"),
+        detail: None,
+        choice: true,
+        on_confirm: ConfirmAction::SwitchCodex(name.to_string()),
+    }));
 }
 
 /// Usage tab: up/down picks the account. Read-only pane.
@@ -9474,6 +9615,15 @@ fn run_confirm_action(app: &mut App, action: ConfirmAction) {
                 return;
             }
             perform_switch(app, &name);
+        }
+        ConfirmAction::SwitchCodex(name) => {
+            let _ = crate::codex_profiles::CodexState::update(|state| {
+                state.set_active(Some(&name));
+                Ok(())
+            });
+            app.codex_rows = codex_rows();
+            app.last_reload_fp = reload_fingerprint();
+            app.toast(ToastKind::Success, format!("switched codex to '{name}'"));
         }
         ConfirmAction::DiscardDivergence(name) => run_discard_divergence(app, &name),
         ConfirmAction::RotateAll => {

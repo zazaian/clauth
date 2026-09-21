@@ -94,39 +94,50 @@ fn draw_overview_accounts(frame: &mut Frame<'_>, area: Rect, app: &App) {
         Vec::new()
     };
     let sel = app.profile_cursor.min(items.len().saturating_sub(1));
+    // `App::codex_cursor` is Overview's own focus overlay (see its doc
+    // comment): `None` means the claude list holds focus, exactly as before
+    // codex became selectable.
+    let claude_focused = app.codex_cursor.is_none();
     let width = list_area.width;
     let mut rows: Vec<ListItem<'_>> = items
         .iter()
         .enumerate()
         .map(|(row, item)| match item {
             MainItemKind::Profile(idx) => {
-                let selected = row == sel;
+                let selected = row == sel && claude_focused;
                 let line = render_overview_row(app, *idx, &widths, selected, focused);
                 ListItem::new(select_line(line, selected, focused, width))
             }
         })
         .collect();
-    // The codex section, after the claude rows and never selectable: the cursor
-    // and every action are bound to `config.profiles`, and a codex account has
-    // no record there for them to act on. Rendering it read-only is what keeps
-    // "what the cursor can reach" and "what the screen shows" from diverging.
+    // Absolute position within the final `rows` (spacer + label lines
+    // included) of whichever row actually has focus — claude's `sel` unless
+    // the loop below finds the focused codex row first. Drives
+    // `ListState::select`, so the scrollbar and ratatui's own scroll-into-view
+    // follow focus into the codex section too, not just the claude list.
+    let mut list_sel = if claude_focused { sel } else { 0 };
     if !codex.is_empty() {
         if !rows.is_empty() {
             rows.push(ListItem::new(Line::from("")));
         }
         rows.push(ListItem::new(Line::from(vec![Span::styled(
-            "  codex — switch with `clauth <name>`",
+            "  codex",
             theme::dim(),
         )])));
-        for row in codex {
-            rows.push(ListItem::new(render_codex_row(app, row, &widths)));
+        for (idx, row) in codex.iter().enumerate() {
+            let selected = app.codex_cursor == Some(idx);
+            if selected {
+                list_sel = rows.len();
+            }
+            let line = render_codex_row(app, row, &widths, selected, focused);
+            rows.push(ListItem::new(select_line(line, selected, focused, width)));
         }
     }
 
     let total = rows.len();
     let list = List::new(rows).style(theme::base());
     let mut state = ratatui::widgets::ListState::default();
-    state.select(Some(sel));
+    state.select(Some(list_sel));
     frame.render_stateful_widget(list, list_area, &mut state);
 
     let viewport = list_area.height as usize;
@@ -386,38 +397,65 @@ fn overview_header(widths: &OverviewWidths, deepseek: bool) -> Line<'static> {
     Line::from(spans)
 }
 
-/// One codex account, in the claude columns: name, plan, 5h, 7d. The cursor
-/// and timer slots are kept blank and no live cell is drawn — this section is
-/// read-only, and a timer would promise a countdown the Overview cannot act on.
-/// The 5h/7d cells reuse `window_summary_spans_bracketed` so a codex bar is
-/// pixel-identical to a claude one at the same width tier, wall-clock/countdown
-/// reset suffix included once the column is wide enough for it. `reset_style`
-/// is always `None` (plain faint countdown): codex carries no drain-rate/burn
-/// tracking to color it from.
-fn render_codex_row(app: &App, row: &CodexRow, widths: &OverviewWidths) -> Line<'static> {
-    let name_style = if row.active {
-        theme::accent().bold()
+/// Title-cases a plan word (`"team"` -> `"Team"`) to match claude's
+/// `account_type_label` — codex's `plan_word` deliberately lowercases for
+/// canonical matching, so the display-only fix belongs here, not there.
+fn titlecase(word: &str) -> String {
+    let mut chars = word.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
+/// One codex account, in the claude columns: name, plan, 5h, 7d — selectable
+/// exactly like a claude row now (`App::codex_cursor`, the codex twin of
+/// `profile_cursor`), with the same `❯` cursor, and the active marker (`●`,
+/// orange) built from the SAME `name_color`/`bold_when` claude rows use, for
+/// true parity rather than a lookalike. The 5h/7d cells reuse
+/// `window_summary_spans_bracketed` so a codex bar is pixel-identical to a
+/// claude one at the same width tier, wall-clock/countdown reset suffix
+/// included once the column is wide enough for it. `reset_style` is always
+/// `None` (plain faint countdown): codex carries no drain-rate/burn tracking
+/// to color it from.
+fn render_codex_row(
+    app: &App,
+    row: &CodexRow,
+    widths: &OverviewWidths,
+    selected: bool,
+    focused: bool,
+) -> Line<'static> {
+    let cursor = if selected && focused {
+        Span::styled("❯ ", theme::accent().bold())
     } else {
-        theme::base()
+        Span::raw("  ")
     };
-    // The same slots every list row carries — the 2-cell cursor prefix (blank:
-    // a codex row is never selected), the marker cell and its gap — so the
-    // `×` and the name sit in the claude rows' columns under the header.
-    let mut spans = vec![
-        Span::raw("  "),
-        if row.broken {
-            Span::styled("×", theme::danger())
-        } else {
-            Span::raw(" ")
-        },
-        Span::raw(" "),
-        Span::styled(fixed(row.name.as_str(), widths.name), name_style),
-        Span::raw(" ".repeat(widths.gap)),
-        match row.plan.as_deref() {
-            Some(plan) => Span::styled(fixed(plan, widths.kind), theme::dim()),
-            None => Span::styled(fixed(NO_DATA, widths.kind), theme::faint()),
-        },
-    ];
+    let mut spans = vec![cursor];
+    // Marker precedence mirrors the claude row's: a broken chain (×) outranks
+    // the active dot (●) — a quarantined chain that happens to also be the
+    // active one still needs the ×, the more actionable fact of the two.
+    if row.broken {
+        spans.push(Span::styled("×", theme::danger()));
+        spans.push(Span::raw(" "));
+    } else if row.active {
+        spans.push(Span::styled(
+            "●",
+            Style::default().fg(theme::accent_2_color()),
+        ));
+        spans.push(Span::raw(" "));
+    } else {
+        spans.push(Span::raw("  "));
+    }
+    let name_style = bold_when(name_color(row.active), selected && focused);
+    spans.push(Span::styled(
+        fixed(row.name.as_str(), widths.name),
+        name_style,
+    ));
+    spans.push(Span::raw(" ".repeat(widths.gap)));
+    spans.push(match row.plan.as_deref() {
+        Some(plan) => Span::styled(fixed(&titlecase(plan), widths.kind), theme::dim()),
+        None => Span::styled(fixed(NO_DATA, widths.kind), theme::faint()),
+    });
     // The usage cells take the claude row's lead-in (narrow gap + a blank
     // timer slot) and its left alignment, and the 7d cell drops with its
     // column, so a codex reading sits under `5h`/`7d` and never under `live`.

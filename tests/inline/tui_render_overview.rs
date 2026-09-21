@@ -2400,7 +2400,7 @@ fn a_codex_rows_usage_cells_sit_under_their_headers() {
 
     let wide = OverviewWidths::new(80, &app);
     assert!(wide.seven_day > 0, "80 columns keep the 7d column");
-    let line = render_codex_row(&app, &row, &wide);
+    let line = render_codex_row(&app, &row, &wide, false, true);
     assert_eq!(
         five_hour_cell_text(&wide, false, &line),
         fixed("[████░░░░░░]  42%", wide.five_hour),
@@ -2414,7 +2414,7 @@ fn a_codex_rows_usage_cells_sit_under_their_headers() {
 
     let narrow = OverviewWidths::new(56, &app);
     assert_eq!(narrow.seven_day, 0, "56 columns drop the 7d column");
-    let line = render_codex_row(&app, &row, &narrow);
+    let line = render_codex_row(&app, &row, &narrow, false, true);
     assert_eq!(
         five_hour_cell_text(&narrow, false, &line),
         fixed("[██░░░]  42%", narrow.five_hour)
@@ -2424,6 +2424,88 @@ fn a_codex_rows_usage_cells_sit_under_their_headers() {
         "",
         "no 7d cell is rendered where the column is gone, so nothing sits under live"
     );
+}
+
+/// An active codex row gets the SAME orange (`accent_2_color`) claude's
+/// active row does, on both the dot and the name — true parity via the
+/// shared `name_color` helper, not a lookalike hand-rolled to match.
+#[test]
+fn active_codex_row_shows_the_orange_dot_and_name() {
+    let _home = crate::testutil::HomeSandbox::new();
+    let _tier = crate::testutil::TierSandbox::new(crate::tui::theme::Tier::Full);
+    let row = CodexRow {
+        name: crate::profile::ProfileName::from("cx1"),
+        active: true,
+        broken: false,
+        plan: None,
+        five_hour: None,
+        seven_day: None,
+    };
+    let app = App::new(config_with(vec![], None, vec![]));
+    let widths = OverviewWidths::new(80, &app);
+    let line = render_codex_row(&app, &row, &widths, false, true);
+
+    let dot = line
+        .spans
+        .iter()
+        .find(|s| s.content == "●")
+        .expect("active row shows the dot");
+    assert_eq!(dot.style.fg, Some(theme::accent_2_color()));
+
+    let name = line
+        .spans
+        .iter()
+        .find(|s| s.content.trim() == "cx1")
+        .expect("name span");
+    assert_eq!(
+        name.style.fg,
+        Some(theme::accent_2_color()),
+        "the name itself is orange too, matching claude's active row"
+    );
+}
+
+/// The Overview cursor (`❯`) reaches codex rows now — the `App::codex_cursor`
+/// overlay feeding `selected` here is what makes that true.
+#[test]
+fn selected_codex_row_shows_the_cursor() {
+    let _home = crate::testutil::HomeSandbox::new();
+    let row = CodexRow {
+        name: crate::profile::ProfileName::from("cx1"),
+        active: false,
+        broken: false,
+        plan: None,
+        five_hour: None,
+        seven_day: None,
+    };
+    let app = App::new(config_with(vec![], None, vec![]));
+    let widths = OverviewWidths::new(80, &app);
+
+    let unselected = line_text(&render_codex_row(&app, &row, &widths, false, true));
+    assert!(!unselected.contains('❯'), "{unselected}");
+
+    let selected = line_text(&render_codex_row(&app, &row, &widths, true, true));
+    assert!(selected.contains('❯'), "{selected}");
+}
+
+/// codex's plan word is stored lowercase for canonical matching
+/// (`codex_auth::plan_word`), but claude's own tier label is title-cased
+/// ("Team") — this is the display-only fix that keeps the two consistent.
+#[test]
+fn codex_plan_label_is_title_cased_like_claudes() {
+    let _home = crate::testutil::HomeSandbox::new();
+    let row = CodexRow {
+        name: crate::profile::ProfileName::from("cx1"),
+        active: false,
+        broken: false,
+        plan: Some("team".to_string()),
+        five_hour: None,
+        seven_day: None,
+    };
+    let app = App::new(config_with(vec![], None, vec![]));
+    let widths = OverviewWidths::new(80, &app);
+    let text = line_text(&render_codex_row(&app, &row, &widths, false, true));
+    assert!(text.contains("Team"), "{text}");
+    assert!(!text.contains("team"), "{text}");
 }
 
 /// A codex name longer than every claude name still widens the name column:
@@ -2456,7 +2538,7 @@ fn a_long_codex_name_widens_the_name_column() {
         "a codex name must size the column the way a claude name would: got {}",
         widths.name
     );
-    let line = render_codex_row(&app, &row, &widths);
+    let line = render_codex_row(&app, &row, &widths, false, true);
     let rendered: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
     assert!(
         rendered.contains(long_name),
@@ -2465,8 +2547,12 @@ fn a_long_codex_name_widens_the_name_column() {
 }
 
 /// A quarantined codex chain renders the same broken-login `×` the claude row
-/// shows; a live chain keeps the blank marker cell. The quarantine read joins
-/// the once-a-second `codex_rows` snapshot, never a per-frame renderer read.
+/// shows, even when that chain is ALSO the active one — the marker
+/// precedence claimed in `render_codex_row`'s doc comment, × outranking ●,
+/// since a dead chain is the more actionable fact of the two. A live,
+/// non-active chain keeps the blank marker cell (cx2, this fixture's
+/// control). The quarantine read joins the once-a-second `codex_rows`
+/// snapshot, never a per-frame renderer read.
 #[test]
 fn a_quarantined_codex_row_renders_the_broken_marker() {
     let home = crate::testutil::HomeSandbox::new();
@@ -2474,7 +2560,7 @@ fn a_quarantined_codex_row_renders_the_broken_marker() {
     crate::profile::mkdir_700(&dir).expect("mkdir .clauth");
     std::fs::write(
         dir.join("codex-profiles.toml"),
-        "active_profile = \"cx2\"\nprofiles = [\"cx1\", \"cx2\"]\n",
+        "active_profile = \"cx1\"\nprofiles = [\"cx1\", \"cx2\"]\n",
     )
     .expect("write codex state");
 
@@ -2491,12 +2577,14 @@ fn a_quarantined_codex_row_renders_the_broken_marker() {
     let rows = crate::tui::app::codex_rows();
     assert_eq!(rows.len(), 2);
     assert!(rows[0].broken, "the snapshot carries the quarantine read");
+    assert!(rows[0].active, "cx1 is also this fixture's active profile");
     assert!(!rows[1].broken, "no record for cx2");
+    assert!(!rows[1].active, "cx2 is neither broken nor active");
 
     let app = App::new(config_with(vec![], None, vec![]));
     let widths = OverviewWidths::new(80, &app);
-    let broken = render_codex_row(&app, &rows[0], &widths);
-    let live = render_codex_row(&app, &rows[1], &widths);
+    let broken = render_codex_row(&app, &rows[0], &widths, false, true);
+    let live = render_codex_row(&app, &rows[1], &widths, false, true);
 
     // The codex row carries the list rows' slots (blank 2-cell cursor prefix,
     // marker cell, gap, name), so the glyph and the name sit in the claude

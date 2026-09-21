@@ -2227,6 +2227,16 @@ pub(crate) fn tmp_sibling(path: &Path) -> PathBuf {
     ))
 }
 
+/// Write `path` by rename, preserving whatever mode it already had (Unix) —
+/// every caller uses this for a file clauth does not own (Claude Code's own
+/// `~/.claude.json` / `~/.claude/settings.json`, or the jsonsync operator
+/// copy), so a rewrite must not restyle it either way. The rename replaces the
+/// whole inode, so without this the replacement silently takes the temp
+/// file's umask-derived mode instead — invisible under the common `022`
+/// umask, where that happens to equal `0o644` anyway, but wrong under any
+/// looser one. A target that does not exist yet has no prior mode to
+/// preserve, so the temp file's own (umask-derived) mode stands, same as any
+/// other tool creating that file for the first time.
 pub(crate) fn atomic_write(path: &Path, content: impl AsRef<[u8]>) -> std::io::Result<()> {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
     if !dir.exists() {
@@ -2234,6 +2244,14 @@ pub(crate) fn atomic_write(path: &Path, content: impl AsRef<[u8]>) -> std::io::R
     }
     let tmp = tmp_sibling(path);
     std::fs::write(&tmp, content)?;
+    #[cfg(unix)]
+    if let Ok(meta) = std::fs::metadata(path) {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(
+            &tmp,
+            std::fs::Permissions::from_mode(meta.permissions().mode()),
+        )?;
+    }
     match std::fs::rename(&tmp, path) {
         Ok(()) => Ok(()),
         Err(e) => {

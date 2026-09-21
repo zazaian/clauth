@@ -4165,3 +4165,36 @@ fn a_default_serve_table_carries_a_stray_key() {
         "the carried [serve] table lands after the marker:\n{after}"
     );
 }
+
+/// `atomic_write` keeps the mode its target already had: the rename swaps in a
+/// new inode, so without the carry-over a rewrite lands at the temp file's
+/// umask-derived mode instead. Two target modes, because either one alone can
+/// coincide with that umask default and pass without the carry-over; no
+/// single umask yields both. Unix-only: Windows has no mode bits.
+#[cfg(unix)]
+#[test]
+fn atomic_write_keeps_the_targets_existing_mode() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let home = crate::testutil::HomeSandbox::new();
+    for mode in [0o600, 0o640] {
+        let path = home.home().join(format!("target-{mode:o}.json"));
+        std::fs::write(&path, b"{}").expect("seed the target");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode))
+            .expect("set the target's mode");
+
+        atomic_write(&path, b"{\"rewritten\":true}").expect("atomic_write");
+
+        let got = std::fs::metadata(&path)
+            .expect("stat the rewrite")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(got, mode, "the rewrite must keep {mode:#o}, got {got:#o}");
+        assert_eq!(
+            std::fs::read(&path).expect("read the rewrite"),
+            b"{\"rewritten\":true}",
+            "the rewrite lands its content"
+        );
+    }
+}

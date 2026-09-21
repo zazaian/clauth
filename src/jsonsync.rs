@@ -232,13 +232,12 @@ fn merge_member(
 /// Write one synced member. The rename swaps the inode, so the mode is the
 /// writer's, not the file's: a clauth-owned copy (under `~/.clauth`) gets 0o600
 /// so the syncer can't silently revert the seed's owner-only mode, while
-/// `operator_file` — Claude Code's own copy under the operator's home — lands at
-/// CC's own 0o644 posture, matching what `claude::apply_profile_to_claude_settings`
-/// already does to that file. Note this is not preservation: `atomic_write`
-/// renames a fresh umask-moded temp over the path, so a hand-tightened operator
-/// file is widened. Deliberate — clauth does not own that file and does not
-/// restyle it either way. Any path that is not `operator_file` is treated as
-/// clauth-owned, the stricter default.
+/// `operator_file` — Claude Code's own copy under the operator's home — keeps
+/// whatever mode it already had (`atomic_write` carries it over the rename),
+/// matching what `claude::apply_profile_to_claude_settings` does to that file:
+/// clauth does not own it and does not restyle it either way, so a
+/// hand-tightened operator file stays tight. Any path that is not
+/// `operator_file` is treated as clauth-owned, the stricter default.
 fn write_member(path: &Path, bytes: &[u8], operator_file: Option<&Path>) -> std::io::Result<()> {
     if operator_file == Some(path) {
         atomic_write(path, bytes)

@@ -175,7 +175,7 @@ On the first TUI launch clauth offers to install shell completions. For bash and
 ## Build and supply chain
 
 - `unsafe` is denied across the crate (`unsafe_code = "deny"`, `unsafe_op_in_unsafe_fn = "deny"`).
-- CI runs `cargo fmt --all -- --check`, `cargo clippy --all-targets --all-features -- -D warnings`, and the test suite (`--all-features`) on Linux, macOS, Windows for every push to `mommy` and every pull request that touches code.
+- CI runs `cargo fmt --all -- --check`, `cargo clippy --all-targets --all-features -- -D warnings`, and the test suite (`--all-features`) on Linux, macOS, Windows for every push to `main` and every pull request that touches code.
 - `cargo-deny` (advisories denied by default, license allowlist, sources locked to crates.io, `openssl` banned in favor of rustls) and `cargo-audit` both run in CI.
 - `Cargo.lock` is committed and every dependency-resolving CI leg passes `--locked`, so a build resolves the versions it records or fails, rather than quietly taking whatever is newest.
 

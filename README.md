@@ -5,21 +5,13 @@
 <h1 align="center">Claude Code multi-account manager & MCP Plugin</h1>
 
 <p align="center">
-  <img src="https://cov.uwuclxdy.dev/badges/uwuclxdy/clauth/coverage.svg" alt="coverage" />
-  <img src="https://cov.uwuclxdy.dev/badges/uwuclxdy/clauth/ratio.svg" alt="code to test ratio" />
-  <img src="https://cov.uwuclxdy.dev/badges/uwuclxdy/clauth/time.svg" alt="test execution time" />
-</p>
-
-<p align="center">
-  <a href="https://github.com/uwuclxdy/clauth/actions/workflows/release.yml"><img src="https://github.com/uwuclxdy/clauth/actions/workflows/release.yml/badge.svg" alt="Release build status" /></a>
-  <a href="https://crates.io/crates/clauth"><img src="https://shields.uwuclxdy.dev/github/v/release/uwuclxdy/clauth?sort=semver&logo=rust&label=version&color=orange" alt="latest version" /></a>
-  <a href="https://github.com/uwuclxdy/clauth/releases"><img src="https://shields.uwuclxdy.dev/github/downloads/uwuclxdy/clauth/total?label=downloads&color=blue" alt="GitHub release downloads" /></a>
   <img src="https://shields.uwuclxdy.dev/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-2b90d9" alt="Linux, macOS, Windows" />
   <a href="LICENSE"><img src="https://shields.uwuclxdy.dev/badge/license-MIT-green" alt="MIT license" /></a>
 </p>
 
 <p align="center">
   <a href="#features">Features</a> ·
+  <a href="#about-this-fork">This fork</a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="#install">Install</a> ·
   <a href="#quickstart">Quickstart</a> ·
@@ -33,6 +25,8 @@
 
 Most account tools do one half. clauth pairs instant **switching between multiple Claude Code accounts** with a live **usage monitor**, then wires the two together so a fallback chain moves you off an exhausted account before Claude Code ever blocks. Works with Claude Pro, Max, Team, Enterprise OAuth accounts or any custom API endpoint. Linux, macOS, Windows.
 
+> This is [MZ](https://github.com/zazaian)'s personal fork of [uwuclxdy/clauth](https://github.com/uwuclxdy/clauth) — see [About this fork](#about-this-fork) for exactly what's different and why the install/wiki links below still point upstream.
+
 ![clauth TUI demo: switching Claude Code accounts with live usage bars](media/demo.gif)
 
 > Font is kinda off on the recording, I promise it looks better than this.
@@ -45,10 +39,23 @@ Most account tools do one half. clauth pairs instant **switching between multipl
 - 🧩 **Run in parallel**: several accounts at once in isolated config dirs, or a clean headless session with none of your global memory, plugins, or hooks
 - 🔌 **From inside Claude**: an MCP plugin lets a live session list, switch, or delegate a whole prompt (even headless) to another account, and tells a session when the account behind it changed
 - 🖥️ **Headless**: `clauth daemon` runs the refresh and auto-switch loop with no TUI and publishes `status.json` for a menu-bar app to read, or serves that feed, the account switch, the herdr panes with their terminal streams, Claude Code session history, and prompts and key presses into a pane to another machine over HTTPS with `--listen`
-- 🔀 **Codex too**: adopt or mint a ChatGPT login as a codex profile, run `codex` under it in its own `CODEX_HOME`, and let a separate codex chain rotate accounts between sessions ([Codex](https://github.com/uwuclxdy/clauth/wiki/Codex))
+- 🔀 **Codex too**: adopt or mint a ChatGPT login as a codex profile, run `codex` under it in its own `CODEX_HOME`, switch it from the Overview tab exactly like a claude account (live usage bars included), and let a separate codex chain auto-start and rotate accounts between sessions ([Codex](https://github.com/uwuclxdy/clauth/wiki/Codex))
 - 🛠️ **Quality-of-life**: browse and resume past sessions under any account, per-profile model routing, `start --auto` to pick the account by the models a session will run, shell completions, signed self-updates, multi-instance safe
 
 Full reference: **[the wiki](https://github.com/uwuclxdy/clauth/wiki)**.
+
+## About this fork
+
+This branch is kept in sync with [upstream `mommy`](https://github.com/uwuclxdy/clauth) via rebase (not merge), so its history stays linear over upstream's own commits rather than tangled through merge commits. On top of everything upstream ships, it adds:
+
+- **Codex parity on the Overview tab** — codex accounts get the same live 5h/7d usage bars, up/down + Enter to select and switch, and active-account highlight claude accounts already had; codex was read-only there before
+- **Codex switches re-point the live credentials file** — selecting a codex account (TUI or `clauth <name>`) re-links `~/.codex/auth.json` at the newly active profile, the same way switching a claude account swaps its live credentials in place. Refuses safely rather than guessing if the current holder has a live session, or something unrecognized is already in the way
+- **Codex's 5h window auto-starts on its own lapse**, mirroring claude's weekly auto-start, gated by a chain-wide Config toggle
+- **A Dracula theme**, independent of the existing color-depth tier, plus a true-black `dark` variant of the original Catppuccin palette
+- **A Config toggle to hide the per-account refresh-countdown timers** on the Overview tab
+- Fixed: garbled characters on the codex OAuth success page, and a codex name column too narrow to show most names
+
+This fork publishes none of its own binaries, install script, or wiki — the install paths and wiki links in this README are upstream's. To run what's on this branch, build it from source ([Development](#development)).
 
 ## How it works
 
@@ -57,6 +64,8 @@ Claude Code stores its session in `~/.claude/.credentials.json` (OAuth tokens) a
 ## Install
 
 Linux, macOS, Windows (Git Bash / MSYS2).
+
+> These get you upstream's own published build. This fork's additions aren't published anywhere — build from source instead ([Development](#development)).
 
 ```bash
 cargo install clauth
@@ -193,12 +202,14 @@ More, including what to check when something misbehaves: [FAQ](https://github.co
 ## Development
 
 ```bash
+git clone https://github.com/zazaian/clauth.git
+cd clauth
 cargo build --release
 cargo clippy --all-targets
 cargo test
 ```
 
-CI gates `fmt --check`, `clippy -D warnings`, the test suite, `cargo-deny` and `cargo audit` on every push to `mommy` and every pull request; a doc-only change is skipped.
+CI gates `fmt --check`, `clippy -D warnings`, the test suite, `cargo-deny` and `cargo audit` on every push to `main` and every pull request; a doc-only change is skipped.
 
 > [!TIP] `cargo test showcase -- --ignored --nocapture` drives the real interactive TUI on fake data against a throwaway home dir (no network, never compiled into the binary). Handy for screenshots.
 

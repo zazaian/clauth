@@ -5,7 +5,7 @@ name: sync wiki
 
 on:
   push:
-    branches: [mommy]
+    branches: [main]
     paths: ['wiki/**']
   workflow_dispatch:
 

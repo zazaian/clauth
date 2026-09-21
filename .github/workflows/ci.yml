@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [mommy]
+    branches: [main]
     paths-ignore:
       - "**/*.md"
       - wiki/**

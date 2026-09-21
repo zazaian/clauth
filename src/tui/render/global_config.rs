@@ -4,7 +4,9 @@
 //! eyebrow header: appearance (`theme`, `reset display`, the `clock`
 //! notation it gates, and `home tab`), scheduler (`on mismatch`, `refresh`
 //! cadence, `refresh spent` toggle, `context nudge`, `auto-start queue`,
-//! `rotation`), auto-switch (`weekly limit`,
+//! `rotation`), codex (`auto-start` — the chain-wide gate on the codex
+//! auto-start kick, ANDed with each profile's own `config.toml` key since
+//! codex has no Setup-tab card to carry that toggle), auto-switch (`weekly limit`,
 //! `switch mode` = burn-aware, `walk order` (issue #86), the burn-aware
 //! `burn floor`/`burn horizon`
 //! tunables it gates (issue #8 follow-up b), then the `quota spent` halt), then
@@ -64,6 +66,9 @@ pub(super) fn draw(frame: &mut Frame<'_>, area: Rect, app: &App) {
             refresh_spent: state.refresh_spent_accounts,
             auto_start_queue: state.auto_start_queue,
             any_auto_start: cfg.profiles.iter().any(|p| p.auto_start),
+            codex_auto_start: crate::codex_profiles::CodexState::load()
+                .map(|s| s.auto_start_enabled())
+                .unwrap_or(true),
             reset_display: state.reset_display(),
             clock_format: state.clock_format(),
             home_tab: state.home_tab(),
@@ -207,6 +212,10 @@ struct RowState {
     /// inert without one (there is nothing to space), so the row dims and its
     /// key no-ops, like every other row another setting makes inert.
     any_auto_start: bool,
+    /// `CodexState.auto_start` — chain-wide, ANDed with each codex profile's
+    /// own `config.toml` key. Always actionable (unlike `auto_start_queue`):
+    /// there is no per-profile card to make it inert without.
+    codex_auto_start: bool,
     reset_display: ResetDisplay,
     clock_format: ClockFormat,
     home_tab: HomeTab,
@@ -331,6 +340,11 @@ fn row_hint(row: GlobalConfigRow, rows: RowState, tunables: RowTunables) -> Opti
             "space auto-start windows evenly, so one resets every 5h / accounts"
         } else {
             "auto-start usage windows as soon as possible"
+        }),
+        GlobalConfigRow::CodexAutoStart => String::from(if rows.codex_auto_start {
+            "open a codex account's 5h window with one turn once it lapses"
+        } else {
+            "never auto-start a codex account's 5h window"
         }),
     };
     Some(tip)
@@ -509,6 +523,9 @@ fn detail_row(
             } else {
                 dimmed_toggle_row("auto-start queue", rows.auto_start_queue, selected)
             }
+        }
+        GlobalConfigRow::CodexAutoStart => {
+            toggle_row(arrow, "auto-start", rows.codex_auto_start, selected)
         }
     }
 }

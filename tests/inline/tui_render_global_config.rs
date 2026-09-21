@@ -34,6 +34,7 @@ fn toggles() -> RowState {
         refresh_spent: true,
         auto_start_queue: true,
         any_auto_start: true,
+        codex_auto_start: true,
         reset_display: ResetDisplay::Relative,
         clock_format: ClockFormat::H24,
         home_tab: HomeTab::Overview,
@@ -261,6 +262,52 @@ fn auto_start_queue_renders_as_a_toggle_with_both_hints_pinned() {
     assert_eq!(
         row_hint(GlobalConfigRow::AutoStartQueue, off, tunables()).as_deref(),
         Some("auto-start usage windows as soon as possible"),
+    );
+}
+
+/// The codex `auto-start` row: a pure on/off toggle labeled bare (the `CODEX`
+/// eyebrow header supplies the context, so the row itself doesn't repeat it),
+/// always actionable — unlike `auto-start queue` it has no other setting that
+/// can make it inert. Both hint strings pinned whole for the same reason as
+/// the queue's.
+#[test]
+fn codex_auto_start_renders_as_a_toggle_with_both_hints_pinned() {
+    let _tier = crate::testutil::TierSandbox::new(crate::tui::theme::Tier::Full);
+    let on = line_text(&detail_row(
+        GlobalConfigRow::CodexAutoStart,
+        false,
+        toggles(),
+        tunables(),
+        None,
+    ));
+    assert!(on.contains("auto-start"), "{on}");
+    assert!(
+        !on.contains("auto-start queue"),
+        "must not repeat the claude row's label: {on}"
+    );
+    assert!(on.contains(theme::toggle_on()), "on state glyph: {on}");
+
+    let mut off = toggles();
+    off.codex_auto_start = false;
+    let off_line = line_text(&detail_row(
+        GlobalConfigRow::CodexAutoStart,
+        false,
+        off,
+        tunables(),
+        None,
+    ));
+    assert!(
+        off_line.contains(theme::toggle_off()),
+        "off state glyph: {off_line}"
+    );
+
+    assert_eq!(
+        row_hint(GlobalConfigRow::CodexAutoStart, toggles(), tunables()).as_deref(),
+        Some("open a codex account's 5h window with one turn once it lapses"),
+    );
+    assert_eq!(
+        row_hint(GlobalConfigRow::CodexAutoStart, off, tunables()).as_deref(),
+        Some("never auto-start a codex account's 5h window"),
     );
 }
 
@@ -821,7 +868,13 @@ fn config_bands_stay_contiguous() {
     }
     assert_eq!(
         seen,
-        ["appearance", "scheduler", "auto-switch", "extra usage"],
+        [
+            "appearance",
+            "scheduler",
+            "codex",
+            "auto-switch",
+            "extra usage"
+        ],
         "the band order is the display order",
     );
 }

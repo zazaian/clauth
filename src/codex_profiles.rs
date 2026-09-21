@@ -77,6 +77,15 @@ pub(crate) struct CodexState {
     /// save: the key is never invented into a file that did not carry it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     weekly_switch_threshold: Option<f64>,
+    /// Chain-wide gate on the auto-start kick (`codex_window_kick`), ANDed
+    /// with each profile's own `config.toml` `auto_start` — the codex twin of
+    /// the Config tab's claude `auto-start queue` row, but a plain on/off
+    /// rather than a spacing knob, since codex has no per-profile card to
+    /// give it the finer control claude's Setup tab does. `None` =
+    /// enabled: introducing this gate must not silently turn off a kick an
+    /// operator already opted a profile into by hand-editing its config.toml.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    auto_start: Option<bool>,
 }
 
 impl CodexState {
@@ -133,6 +142,18 @@ impl CodexState {
         self.weekly_switch_threshold
             .filter(|v| (MIN_WEEKLY_SWITCH_PCT..=MAX_WEEKLY_SWITCH_PCT).contains(v))
             .unwrap_or(DEFAULT_WEEKLY_SWITCH_PCT)
+    }
+
+    /// Whether the auto-start kick may run at all, chain-wide. Distinct from
+    /// `codex_window_kick::auto_start_enabled`, which reads ONE profile's own
+    /// `config.toml` — both must say yes for a kick to fire.
+    pub(crate) fn auto_start_enabled(&self) -> bool {
+        self.auto_start.unwrap_or(true)
+    }
+
+    /// The Config tab's codex `auto-start` row writer.
+    pub(crate) fn set_auto_start(&mut self, on: bool) {
+        self.auto_start = Some(on);
     }
 
     /// Exact-match membership, same semantics as `AppConfig::find` answering

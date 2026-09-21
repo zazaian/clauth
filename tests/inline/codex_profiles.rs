@@ -67,6 +67,37 @@ fn the_mtime_stat_answers_absent_and_present() {
     assert!(codex_state_mtime().is_some());
 }
 
+/// The chain-wide auto-start gate defaults to ON when absent — introducing it
+/// must not silently disable a kick an operator already opted a profile into
+/// via that profile's own `config.toml` — and an explicit value is honored
+/// either way.
+#[test]
+fn auto_start_enabled_defaults_on_and_honors_an_explicit_value() {
+    let _home = HomeSandbox::new();
+    write_state("profiles = [\"solo\"]\n");
+    assert!(CodexState::load().expect("load").auto_start_enabled());
+
+    write_state("profiles = [\"solo\"]\nauto_start = false\n");
+    assert!(!CodexState::load().expect("load").auto_start_enabled());
+
+    write_state("profiles = [\"solo\"]\nauto_start = true\n");
+    assert!(CodexState::load().expect("load").auto_start_enabled());
+}
+
+/// `set_auto_start` through `update` round-trips: the Config tab's toggle
+/// writes `codex-profiles.toml`, not `profiles.toml`.
+#[test]
+fn set_auto_start_round_trips_through_update() {
+    let _home = HomeSandbox::new();
+    write_state("profiles = [\"solo\"]\n");
+    CodexState::update(|state| {
+        state.set_auto_start(false);
+        Ok(())
+    })
+    .expect("update");
+    assert!(!CodexState::load().expect("load").auto_start_enabled());
+}
+
 /// The codex chain's weekly line is the codex file's own, under the claude key
 /// (`weekly_switch_threshold`): absent reads as the shared default, a value
 /// inside the band is honored, and an out-of-band hand-edit resets to the

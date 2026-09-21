@@ -400,6 +400,13 @@ pub(crate) enum GlobalConfigRow {
     /// (`AppState.auto_start_queue`, default OFF — for one account the queue is
     /// a no-op, so the operator opts in). ENUMERATED on/off, ⏎ mirrors space.
     AutoStartQueue,
+    /// Chain-wide gate on codex's auto-start kick
+    /// (`CodexState.auto_start`, default ON). ANDed with each codex profile's
+    /// own `config.toml` `auto_start` — there is no Setup-tab card for a
+    /// codex account to carry that per-profile toggle, so this is the one
+    /// TUI-reachable switch for the whole feature. ENUMERATED on/off, ⏎
+    /// mirrors space.
+    CodexAutoStart,
 }
 
 /// Inline editor state for the Config detail pane. Built on entry, torn down
@@ -4971,6 +4978,7 @@ pub(crate) const GLOBAL_CONFIG_ROWS: [GlobalConfigRow; 18] = [
     GlobalConfigRow::ContextNudge,
     GlobalConfigRow::AutoStartQueue,
     GlobalConfigRow::PreemptiveRotation,
+    GlobalConfigRow::CodexAutoStart,
     GlobalConfigRow::WeeklyThreshold,
     GlobalConfigRow::BurnAware,
     GlobalConfigRow::WalkOrder,
@@ -4998,6 +5006,7 @@ impl GlobalConfigRow {
             | GlobalConfigRow::ContextNudge
             | GlobalConfigRow::AutoStartQueue
             | GlobalConfigRow::PreemptiveRotation => "scheduler",
+            GlobalConfigRow::CodexAutoStart => "codex",
             GlobalConfigRow::WeeklyThreshold
             | GlobalConfigRow::BurnAware
             | GlobalConfigRow::WalkOrder
@@ -5106,6 +5115,7 @@ fn run_global_config_row(app: &mut App, row: GlobalConfigRow) {
                 toggle_auto_start_queue(app);
             }
         }
+        GlobalConfigRow::CodexAutoStart => toggle_codex_auto_start(app),
     }
 }
 
@@ -5464,6 +5474,19 @@ fn toggle_auto_start_queue(app: &mut App) {
         cfg.state.auto_start_queue = !cfg.state.auto_start_queue;
         let _ = save_app_state(&cfg.state);
     }
+    app.last_reload_fp = reload_fingerprint();
+}
+
+/// Writes `codex-profiles.toml`, never `profiles.toml` — the chain-wide codex
+/// gate lives in the codex roster's own state file (decision 1's file
+/// split), not `AppState`. `update` loads under the state lock and mutates
+/// that exact snapshot, so this never races a concurrent codex write the way
+/// a separate load-then-save would.
+fn toggle_codex_auto_start(app: &mut App) {
+    let _ = crate::codex_profiles::CodexState::update(|state| {
+        state.set_auto_start(!state.auto_start_enabled());
+        Ok(())
+    });
     app.last_reload_fp = reload_fingerprint();
 }
 

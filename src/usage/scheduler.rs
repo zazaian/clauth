@@ -3667,7 +3667,14 @@ fn codex_usage_tick(state: &SchedulerState) {
                 if let Ok(mut st) = state.status.lock() {
                     st.insert(name.to_string(), FetchStatus::Fresh);
                 }
-                codex_auto_start_tick(state, name, token, auth.account_id(), lapsed);
+                codex_auto_start_tick(
+                    state,
+                    name,
+                    token,
+                    auth.account_id(),
+                    lapsed,
+                    codex.auto_start_enabled(),
+                );
             }
             // The token is stale, not the account: queue ONE forced refresh for
             // the standby leg and leave the last good reading in place, so a
@@ -3695,10 +3702,11 @@ fn codex_auto_start_tick(
     token: &str,
     account_id: Option<&str>,
     lapsed: bool,
+    globally_enabled: bool,
 ) {
     crate::codex_window_kick::note_window_state(name.as_str(), lapsed);
     if !crate::codex_window_kick::should_kick(
-        crate::codex_window_kick::auto_start_enabled(name),
+        globally_enabled && crate::codex_window_kick::auto_start_enabled(name),
         lapsed,
         crate::codex_window_kick::already_kicked(name.as_str()),
     ) {

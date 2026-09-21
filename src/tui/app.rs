@@ -9620,7 +9620,10 @@ fn run_confirm_action(app: &mut App, action: ConfirmAction) {
             Ok(()) => {
                 app.codex_rows = codex_rows();
                 app.last_reload_fp = reload_fingerprint();
-                app.toast(ToastKind::Success, format!("switched codex to '{name}'"));
+                app.toast(
+                    ToastKind::Success,
+                    format!("switched codex to '{name}' — takes effect in a new codex session"),
+                );
             }
             Err(e) => app.toast(ToastKind::Danger, format!("switch failed\n{e}")),
         },

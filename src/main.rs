@@ -1699,10 +1699,12 @@ fn cmd_switch(name: &str) -> Result<()> {
     let config = load_config()?;
     let Some(canonical) = config.canonical_name(name) else {
         // Not a claude name — a codex profile switches its own harness's
-        // active slot, with no live install to perform (session-boundary).
+        // active slot AND relinks the live ~/.codex/auth.json (MZ's ruling
+        // 2026-09-21); a running codex process still won't see it until it
+        // restarts (see docs/codex-plan.md), so the message says so.
         if let Some(canonical) = codex_profiles::CodexState::load()?.canonical_name(name) {
             actions::switch_codex_profile(&canonical)?;
-            outln!("clauth: switched codex to '{canonical}'");
+            outln!("clauth: switched codex to '{canonical}' — takes effect in a new codex session");
             return Ok(());
         }
         return Err(unknown_profile_error(&config, name));

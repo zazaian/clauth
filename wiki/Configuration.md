@@ -148,6 +148,7 @@ clauth keeps no file for the queue: it derives the last open from `usage_history
 | `switch_off_when_budget_spent` | bool | `true` | switch off once the spend ceiling is used up |
 | `default_divergence` | string | none | auto-resolve a credential mismatch: `Overwrite`, `NewProfile`, `Discard` |
 | `theme` | string | auto | `full` or `compatible` |
+| `palette` | string | `catppuccin` | named color identity, independent of `theme`: `catppuccin` or `dracula` |
 | `reset_display` | string | `relative` | `relative`, `clock`, `both` |
 | `clock_format` | string | `24h` | `24h` or `12h` |
 | `home_tab` | string | `overview` | the tab every launch opens on: `overview`, `usage`, `tokens`, `setup`, `fallback`, `config`, `status`, or `plugin`; edited from the Config tab's `home tab` row. the first herdr launch lands on `plugin` with the herdr row open instead |

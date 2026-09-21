@@ -4936,6 +4936,15 @@ fn next_theme_tier_cycles_full_compatible_dark_and_wraps() {
     assert_eq!(super::next_theme_tier(Tier::Dark), Tier::Full);
 }
 
+// ── palette cycle ─────────────────────────────────────────────────────────────
+
+#[test]
+fn next_palette_cycles_catppuccin_dracula_and_wraps() {
+    use crate::tui::theme::Palette;
+    assert_eq!(super::next_palette(Palette::Catppuccin), Palette::Dracula);
+    assert_eq!(super::next_palette(Palette::Dracula), Palette::Catppuccin);
+}
+
 // ── divergence default ─────────────────────────────────────────────────────
 
 use crate::profile::DivergenceChoice;

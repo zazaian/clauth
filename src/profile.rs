@@ -623,6 +623,16 @@ pub(crate) enum ThemeName {
     Dark,
 }
 
+/// Color palette stored in `profiles.toml`, independent of [`ThemeName`] (see
+/// `tui::theme`'s module doc — palette and tier are orthogonal axes):
+/// `palette = "catppuccin"` / `palette = "dracula"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum PaletteName {
+    Catppuccin,
+    Dracula,
+}
+
 /// How a usage window's reset renders across the TUI (`AppState.reset_display`,
 /// issue #39). `Relative` is the shipped default and the pre-setting behavior,
 /// byte for byte.
@@ -934,6 +944,10 @@ pub(crate) struct AppState {
     /// detect applies when this is `None` and no flag was passed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) theme: Option<ThemeName>,
+    /// Config-file palette override. CLI `--palette` flag takes priority;
+    /// Catppuccin applies when this is `None` and no flag was passed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) palette: Option<PaletteName>,
     /// Shape of every reset countdown in the TUI. `None` = the
     /// [`ResetDisplay`] default, so an untouched profiles.toml carries neither
     /// this key nor [`AppState::clock_format`] and renders exactly as it did
@@ -1230,6 +1244,7 @@ impl Default for AppState {
             refresh_spent_accounts: true,
             auto_start_queue: false,
             theme: None,
+            palette: None,
             reset_display: None,
             clock_format: None,
             home_tab: None,

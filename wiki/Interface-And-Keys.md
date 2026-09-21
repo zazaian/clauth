@@ -114,6 +114,7 @@ The account list ends in an action row: `+ new`, which turns this pane into the 
 | Row | Options | Default |
 |-----|---------|---------|
 | `theme` | `full`, `compatible` | auto-detected |
+| `palette` | `catppuccin`, `dracula` | `catppuccin` |
 | `reset display` | `relative`, `clock`, `both` | `relative` |
 | `clock` | `24h`, `12h` | `24h` |
 | `home tab` | `overview`, `usage`, `tokens`, `setup`, `fallback`, `config`, `status`, `plugin` | `overview` |

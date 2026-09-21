@@ -62,9 +62,9 @@ mod testutil;
 use anyhow::{Context, Result};
 use clap::Parser as _;
 
-use crate::cli::{Cli, Command, LoginArgs, ThemeArg};
+use crate::cli::{Cli, Command, LoginArgs, PaletteArg, ThemeArg};
 use crate::out::{errln, out, outln};
-use crate::profile::{AppConfig, ProfileName, ThemeName, load_config};
+use crate::profile::{AppConfig, PaletteName, ProfileName, ThemeName, load_config};
 use crate::runtime::Isolation;
 
 /// The not-found refusal for the commands that try the codex roster before
@@ -213,18 +213,22 @@ pub(crate) fn exit_code(result: Result<()>) -> i32 {
 }
 
 fn dispatch(cli: Cli) -> Result<()> {
-    // `--theme` is a root-level global, so it parses ahead of any subcommand
-    // and is accepted (and ignored) on the non-TUI paths.
+    // `--theme` / `--palette` are root-level globals, so they parse ahead of
+    // any subcommand and are accepted (and ignored) on the non-TUI paths.
     let theme_override = cli.theme.map(|t| match t {
         ThemeArg::Full => tui::theme::Tier::Full,
         ThemeArg::Compatible => tui::theme::Tier::Compatible,
         ThemeArg::Dark => tui::theme::Tier::Dark,
     });
+    let palette_override = cli.palette.map(|p| match p {
+        PaletteArg::Catppuccin => tui::theme::Palette::Catppuccin,
+        PaletteArg::Dracula => tui::theme::Palette::Dracula,
+    });
 
     let Some(command) = cli.command else {
         use std::io::IsTerminal as _;
         if std::io::stdout().is_terminal() {
-            return cmd_tui(theme_override);
+            return cmd_tui(theme_override, palette_override);
         }
         return cmd_bare_help();
     };
@@ -2208,7 +2212,10 @@ fn cmd_bare_help() -> Result<()> {
     Err(HelpRendered.into())
 }
 
-fn cmd_tui(theme_override: Option<tui::theme::Tier>) -> Result<()> {
+fn cmd_tui(
+    theme_override: Option<tui::theme::Tier>,
+    palette_override: Option<tui::theme::Palette>,
+) -> Result<()> {
     platform::init();
     runtime::gc_stale_runtimes();
     completions::auto_install_once();
@@ -2220,7 +2227,16 @@ fn cmd_tui(theme_override: Option<tui::theme::Tier>) -> Result<()> {
         ThemeName::Compatible => tui::theme::Tier::Compatible,
         ThemeName::Dark => tui::theme::Tier::Dark,
     });
-    tui::theme::init(theme_override.or(config_tier));
+    // Config-file palette: profiles.toml `palette = "dracula"`. CLI flag beats
+    // config; both beat the Catppuccin default.
+    let config_palette = config.state.palette.map(|p| match p {
+        PaletteName::Catppuccin => tui::theme::Palette::Catppuccin,
+        PaletteName::Dracula => tui::theme::Palette::Dracula,
+    });
+    tui::theme::init(
+        theme_override.or(config_tier),
+        palette_override.or(config_palette),
+    );
     // herdr injects `HERDR_ENV=1` into every pane it manages, and only the
     // exact `"1"` counts (the same shape CLAUTH_NO_UPDATE reads). The settled
     // detection channel: no flag, no config key, so a normal terminal can

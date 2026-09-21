@@ -88,6 +88,7 @@ clauth list           # account table with cached usage, no network
 | `clauth herdr config get <key>` | | print one herdr knob: `popup_width`, `pane_tag`, `tag_watch_secs`, `border_label`, `delegate_dot`, `delegate_row_text` |
 
 `--theme <full\|compatible>` is global and forces a color depth for the TUI.
+`--palette <catppuccin\|dracula>` is global and forces a color identity, independent of `--theme`.
 
 ### Rules worth knowing
 

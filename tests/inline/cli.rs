@@ -1167,6 +1167,7 @@ fn revoking_an_unknown_device_exits_one_naming_it() {
     let _home = crate::testutil::HomeSandbox::new();
     let err = dispatch(Cli {
         theme: None,
+        palette: None,
         command: Some(Command::Devices {
             json: false,
             cmd: Some(crate::cli::DevicesCommand::Revoke {
@@ -1277,6 +1278,38 @@ fn theme_accepts_both_spellings_ahead_of_a_subcommand() {
         parse_exit_code(&["--theme", "bogus"]),
         2,
         "an unknown tier is a usage error, not a profile named --theme=bogus"
+    );
+}
+
+// ── palette ───────────────────────────────────────────────────────────────────
+
+/// `--palette`'s own twin of the `--theme` coverage above: both spellings,
+/// ahead of a subcommand, independent of `--theme` on the same command line.
+#[test]
+fn palette_accepts_both_spellings_ahead_of_a_subcommand() {
+    assert_eq!(
+        parse(&["--palette=catppuccin"])
+            .expect("= spelling")
+            .palette,
+        Some(PaletteArg::Catppuccin)
+    );
+    assert_eq!(
+        parse(&["--palette", "dracula"])
+            .expect("space spelling")
+            .palette,
+        Some(PaletteArg::Dracula),
+        "the space-separated spelling is new and must work"
+    );
+    let cli = parse(&["--theme=dark", "--palette=dracula", "which", "--json"])
+        .expect("both flags ahead of a subcommand");
+    assert_eq!(cli.theme, Some(ThemeArg::Dark));
+    assert_eq!(cli.palette, Some(PaletteArg::Dracula));
+    assert!(matches!(cli.command, Some(Command::Which { json: true })));
+
+    assert_eq!(
+        parse_exit_code(&["--palette", "bogus"]),
+        2,
+        "an unknown palette is a usage error, not a profile named --palette=bogus"
     );
 }
 
@@ -1501,6 +1534,7 @@ fn an_unrecognized_multi_word_invocation_is_a_usage_error() {
 
     let err = dispatch(Cli {
         theme: None,
+        palette: None,
         command: Some(Command::External(vec!["strat".into(), "acme".into()])),
     })
     .expect_err("more than one bare word is nothing clauth knows");
@@ -1514,6 +1548,7 @@ fn an_absent_daemon_reports_exit_one_not_the_usage_code() {
     let _home = crate::testutil::HomeSandbox::new();
     let err = dispatch(Cli {
         theme: None,
+        palette: None,
         command: Some(Command::Daemon {
             standby: false,
             no_standby: false,

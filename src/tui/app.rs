@@ -49,8 +49,8 @@ use crate::profile::{
     AppConfig, ClockFormat, ConfigHandle, ConsoleSite, DivergenceChoice, HerdrSettings, HomeTab,
     MAX_CONTEXT_NUDGE_TOKENS, MAX_REFRESH_INTERVAL_MS, MAX_WEEKLY_SWITCH_PCT,
     MIN_CONTEXT_NUDGE_TOKENS, MIN_REFRESH_INTERVAL_MS, MIN_WEEKLY_SWITCH_PCT, ModelSettings,
-    PopupWidth, Profile, ProfileName, ReloadFingerprint, ResetDisplay, ThemeName, WalkOrder,
-    load_config, reload_fingerprint, save_app_state, save_profile,
+    PaletteName, PopupWidth, Profile, ProfileName, ReloadFingerprint, ResetDisplay, ThemeName,
+    WalkOrder, load_config, reload_fingerprint, save_app_state, save_profile,
 };
 use crate::profile_cache::{USAGE_CACHE_FILE, load_profile_cache, profile_cache_mtime_ms};
 use crate::profile_json::{stale_after_ms, usage_cache_file};
@@ -323,9 +323,14 @@ pub(crate) const BURN_HORIZON_PRESETS: [u64; 4] = [30_000, 45_000, 60_000, 90_00
 /// [`AppState`] — no decorative toggles. ⏎/space cycles or flips in place.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GlobalConfigRow {
-    /// Color-depth tier: `full` (truecolor) / `compatible` (xterm-256).
-    /// Persists to `[theme]` and live-swaps the active palette.
+    /// Color-depth tier: `full` (truecolor) / `compatible` (xterm-256) /
+    /// `dark` (full, true-black bg). Persists to `[theme]` and live-swaps the
+    /// active tier. Independent of [`GlobalConfigRow::Palette`] — see
+    /// `tui::theme`'s module doc.
     Theme,
+    /// Named color identity: `catppuccin` / `dracula`. Persists to
+    /// `[palette]` and live-swaps the active palette.
+    Palette,
     /// Shape of every reset countdown (`AppState.reset_display`, issue #39):
     /// `relative` (stock) / `clock` / `both`. ⏎/space cycles.
     ResetShape,
@@ -5114,8 +5119,9 @@ pub(crate) const FALLBACK_ROWS: [FallbackRow; 8] = [
 /// Rows on the program-wide Config tab, in display order. Related knobs sit
 /// together instead of interleaving halt above detection; [`GlobalConfigRow::band`]
 /// names each run, and the renderer turns a band change into an eyebrow header.
-pub(crate) const GLOBAL_CONFIG_ROWS: [GlobalConfigRow; 20] = [
+pub(crate) const GLOBAL_CONFIG_ROWS: [GlobalConfigRow; 21] = [
     GlobalConfigRow::Theme,
+    GlobalConfigRow::Palette,
     GlobalConfigRow::ResetShape,
     GlobalConfigRow::ClockNotation,
     GlobalConfigRow::HomeTab,
@@ -5145,6 +5151,7 @@ impl GlobalConfigRow {
     pub(crate) fn band(self) -> &'static str {
         match self {
             GlobalConfigRow::Theme
+            | GlobalConfigRow::Palette
             | GlobalConfigRow::ResetShape
             | GlobalConfigRow::ClockNotation
             | GlobalConfigRow::HomeTab
@@ -5218,6 +5225,7 @@ fn handle_global_config_key(app: &mut App, key: KeyEvent) {
 fn run_global_config_row(app: &mut App, row: GlobalConfigRow) {
     match row {
         GlobalConfigRow::Theme => cycle_theme(app),
+        GlobalConfigRow::Palette => cycle_palette(app),
         GlobalConfigRow::ResetShape => cycle_reset_display(app),
         GlobalConfigRow::HomeTab => cycle_home_tab(app),
         // Inert while the countdown is relative (rendered dimmed): no surface
@@ -5269,9 +5277,10 @@ fn run_global_config_row(app: &mut App, row: GlobalConfigRow) {
     }
 }
 
-/// Cycle the active theme tier, persist it to `[theme]`, and live-swap the
-/// palette so the next frame renders in the new tier without a restart.
-/// Theme cycle order: `full` → `compatible` → `dark` → `full`.
+/// Cycle the active color-depth tier, persist it to `[theme]`, and live-swap
+/// it so the next frame renders in the new tier without a restart. Tier cycle
+/// order: `full` → `compatible` → `dark` → `full`. Independent of
+/// [`cycle_palette`] — see `tui::theme`'s module doc.
 fn next_theme_tier(current: theme::Tier) -> theme::Tier {
     match current {
         theme::Tier::Full => theme::Tier::Compatible,
@@ -5294,6 +5303,31 @@ fn cycle_theme(app: &mut App) {
     }
     app.last_reload_fp = reload_fingerprint();
     theme::set_tier(next);
+}
+
+/// [`cycle_theme`]'s sibling for the named color identity: persist to
+/// `[palette]` and live-swap it. Cycle order: `catppuccin` → `dracula` →
+/// `catppuccin`.
+fn next_palette(current: theme::Palette) -> theme::Palette {
+    match current {
+        theme::Palette::Catppuccin => theme::Palette::Dracula,
+        theme::Palette::Dracula => theme::Palette::Catppuccin,
+    }
+}
+
+fn cycle_palette(app: &mut App) {
+    let next = next_palette(theme::palette());
+    let name = match next {
+        theme::Palette::Catppuccin => PaletteName::Catppuccin,
+        theme::Palette::Dracula => PaletteName::Dracula,
+    };
+    {
+        let mut cfg = app.config();
+        cfg.state.palette = Some(name);
+        let _ = save_app_state(&cfg.state);
+    }
+    app.last_reload_fp = reload_fingerprint();
+    theme::set_palette(next);
 }
 
 /// Fallback footer hint derived from current focus + selection + edit state.

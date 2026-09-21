@@ -584,6 +584,42 @@ fn app_state_walk_order_defaults_chain_and_both_values_round_trip() {
     assert_eq!(reparsed_chain.walk_order(), WalkOrder::Chain);
 }
 
+/// `palette` (Catppuccin/Dracula) round-trips independently of `theme`
+/// (full/compatible/dark) — the two are orthogonal fields, not one flattened
+/// enum, per `tui::theme`'s module doc.
+#[test]
+fn app_state_palette_defaults_unset_and_both_values_round_trip() {
+    let state: AppState = toml::from_str("profiles = []\n").expect("parse state");
+    assert!(
+        state.palette.is_none(),
+        "unset stays unset, so a stock file omits the key"
+    );
+
+    let dracula = AppState {
+        palette: Some(PaletteName::Dracula),
+        ..AppState::default()
+    };
+    let rendered = toml::to_string_pretty(&dracula).expect("render dracula state");
+    assert!(
+        rendered.contains("palette = \"dracula\""),
+        "got:\n{rendered}"
+    );
+    let reparsed: AppState = toml::from_str(&rendered).expect("reparse dracula state");
+    assert_eq!(reparsed.palette, Some(PaletteName::Dracula));
+
+    let catppuccin = AppState {
+        palette: Some(PaletteName::Catppuccin),
+        ..AppState::default()
+    };
+    let rendered_cat = toml::to_string_pretty(&catppuccin).expect("render catppuccin state");
+    assert!(
+        rendered_cat.contains("palette = \"catppuccin\""),
+        "an explicit catppuccin round-trips too, got:\n{rendered_cat}"
+    );
+    let reparsed_cat: AppState = toml::from_str(&rendered_cat).expect("reparse catppuccin state");
+    assert_eq!(reparsed_cat.palette, Some(PaletteName::Catppuccin));
+}
+
 // On must round-trip explicitly; off (the default) is omitted entirely from
 // the rendered profiles.toml, matching `show_pace`/`count_cache`'s treatment
 // of their own default-off booleans.

@@ -973,6 +973,36 @@ impl Drop for TierSandbox {
     }
 }
 
+/// [`TierSandbox`]'s sibling for [`crate::tui::theme::Palette`] — a separate
+/// lock (`PALETTE_TEST_LOCK`, rank `PaletteTest`) rather than the same one, so
+/// a test pinning both never risks a same-thread re-entrant deadlock.
+pub(crate) struct PaletteSandbox {
+    // Drop order: this type's `drop` restores under the lock, which the field
+    // then releases.
+    _guard: crate::lockorder::RankedGuard<'static, ()>,
+    prev: Option<crate::tui::theme::Palette>,
+}
+
+impl PaletteSandbox {
+    pub(crate) fn new(palette: crate::tui::theme::Palette) -> Self {
+        let guard = crate::tui::theme::PALETTE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let prev = crate::tui::theme::palette_override();
+        crate::tui::theme::set_palette(palette);
+        Self {
+            _guard: guard,
+            prev,
+        }
+    }
+}
+
+impl Drop for PaletteSandbox {
+    fn drop(&mut self) {
+        crate::tui::theme::restore_palette(self.prev);
+    }
+}
+
 /// A minimal `Profile` with every optional field unset — tests fill in what
 /// they assert on.
 pub(crate) fn blank_profile(name: &crate::profile::ProfileName) -> crate::profile::Profile {

@@ -39,6 +39,12 @@ pub(crate) struct Cli {
     #[arg(long, global = true, value_name = "TIER", display_order = 900)]
     pub(crate) theme: Option<ThemeArg>,
 
+    /// Force a color palette instead of the Catppuccin default (TUI only).
+    /// Independent of `--theme`: this picks which colors, `--theme` picks
+    /// truecolor vs 256-color vs true-black-bg.
+    #[arg(long, global = true, value_name = "PALETTE", display_order = 901)]
+    pub(crate) palette: Option<PaletteArg>,
+
     #[command(subcommand)]
     pub(crate) command: Option<Command>,
 }
@@ -54,6 +60,16 @@ pub(crate) enum ThemeArg {
     Compatible,
     /// `full`, with the background swapped to true black.
     Dark,
+}
+
+/// `--palette`'s named color identities. Never auto-detected — nothing about
+/// a terminal implies which one you want, unlike `--theme`'s color depth.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub(crate) enum PaletteArg {
+    /// The original palette, and the default when this flag is absent.
+    Catppuccin,
+    /// <https://draculatheme.com>.
+    Dracula,
 }
 
 #[derive(Subcommand, Debug)]

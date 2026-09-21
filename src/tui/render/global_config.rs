@@ -1,7 +1,8 @@
 //! Program-wide Config tab — a single panel of global settings, distinct from
 //! the per-account Setup tab. Rows back real persisted state in `AppState` and
 //! run in the concern bands `GlobalConfigRow::band` names, each opened by an
-//! eyebrow header: appearance (`theme`, `reset display`, the `clock`
+//! eyebrow header: appearance (`theme`, `palette` — independent axes, see
+//! `tui::theme`'s module doc — `account timers`, `reset display`, the `clock`
 //! notation it gates, and `home tab`), scheduler (`on mismatch`, `refresh`
 //! cadence, `refresh spent` toggle, `context nudge`, `auto-start queue`,
 //! `rotation`), codex (`auto-start` — the chain-wide gate on the codex
@@ -34,7 +35,7 @@ use super::super::app::{
     WEEKLY_PRESETS, format_weekly_pct, parse_context_nudge_tokens, parse_refresh_secs,
     parse_weekly_pct,
 };
-use super::super::theme::{self, Tier};
+use super::super::theme::{self, Palette, Tier};
 use super::panes::{
     cycle_option, draw_scrolled_lines, head_cols, help_tooltip_lines, highlight_row,
     invalid_tooltip_lines, key_cell, label_style, section_box, value_caret,
@@ -253,6 +254,7 @@ fn row_hint(row: GlobalConfigRow, rows: RowState, tunables: RowTunables) -> Opti
     // behavior hint — the dim is the "can't touch this", not a gate clause.
     let tip: String = match row {
         GlobalConfigRow::Theme => return None,
+        GlobalConfigRow::Palette => return None,
         GlobalConfigRow::AccountTimers => String::from(if rows.account_timers {
             "show each claude account's countdown to its next refresh"
         } else {
@@ -382,6 +384,7 @@ fn detail_row(
         Span::raw("  ")
     };
     let tier = theme::tier();
+    let palette = theme::palette();
     match row {
         GlobalConfigRow::Theme => cycle_row(
             arrow,
@@ -390,6 +393,15 @@ fn detail_row(
                 ("full", tier == Tier::Full),
                 ("compatible", tier == Tier::Compatible),
                 ("dark", tier == Tier::Dark),
+            ],
+            selected,
+        ),
+        GlobalConfigRow::Palette => cycle_row(
+            arrow,
+            "palette",
+            &[
+                ("catppuccin", palette == Palette::Catppuccin),
+                ("dracula", palette == Palette::Dracula),
             ],
             selected,
         ),

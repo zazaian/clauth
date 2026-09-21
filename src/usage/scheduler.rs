@@ -3654,6 +3654,7 @@ fn codex_usage_tick(state: &SchedulerState) {
         match outcome {
             Ok(info) => {
                 crate::codex_auth::kick_reset(name.as_str());
+                let lapsed = info.codex_primary_window_lapsed.unwrap_or(false);
                 // Persist through the same per-profile cache the claude leg
                 // writes, so every reader that resolves a window BY NAME —
                 // `published_windows`, the Usage tab's seed, a `status --json`
@@ -3666,6 +3667,7 @@ fn codex_usage_tick(state: &SchedulerState) {
                 if let Ok(mut st) = state.status.lock() {
                     st.insert(name.to_string(), FetchStatus::Fresh);
                 }
+                codex_auto_start_tick(state, name, token, auth.account_id(), lapsed);
             }
             // The token is stale, not the account: queue ONE forced refresh for
             // the standby leg and leave the last good reading in place, so a
@@ -3676,6 +3678,60 @@ fn codex_usage_tick(state: &SchedulerState) {
     }
 
     apply_codex_switch(state, &codex, interval_ms);
+}
+
+/// The codex twin of claude's `auto_start_should_kick` leg, called once per
+/// due profile right after its regular usage poll lands: fold the reading
+/// into the once-per-lapse mark, and fire the kick when this is a fresh
+/// lapse on an opted-in profile. Unlike the claude leg this blocks the
+/// scheduler tick until the subprocess itself runs to completion (or hits
+/// `codex_window_kick::KICK_TIMEOUT`) plus one follow-up poll — the accepted
+/// cost of the once-per-lapse design (module doc, `codex_window_kick`): rare
+/// enough (at most once per 5h per profile) that a bounded stall on this leg
+/// is preferable to the concurrency this would otherwise need.
+fn codex_auto_start_tick(
+    state: &SchedulerState,
+    name: &ProfileName,
+    token: &str,
+    account_id: Option<&str>,
+    lapsed: bool,
+) {
+    crate::codex_window_kick::note_window_state(name.as_str(), lapsed);
+    if !crate::codex_window_kick::should_kick(
+        crate::codex_window_kick::auto_start_enabled(name),
+        lapsed,
+        crate::codex_window_kick::already_kicked(name.as_str()),
+    ) {
+        return;
+    }
+    // Marked BEFORE the attempt, not after: a kick that itself hangs past
+    // its own timeout must not be retried next tick either, since the once-
+    // per-lapse budget is spent on the attempt, not on its success.
+    crate::codex_window_kick::mark_kicked(name.as_str());
+    logline!("{name}: 5h window is lapsed, auto-start ping firing");
+    if !crate::codex_window_kick::spawn_kick(name) {
+        logline!("{name}: 5h auto-start kick did not run to completion");
+        return;
+    }
+    await_request_slot(CODEX_USAGE_ORIGIN);
+    match crate::usage::fetch_codex_usage(token, account_id, now_epoch_secs()) {
+        Ok(fresh) => {
+            let opened = !fresh.codex_primary_window_lapsed.unwrap_or(true);
+            if opened {
+                logline!("{name}: 5h auto-start kick accepted, window opened");
+            } else {
+                logline!("{name}: 5h auto-start kick ran but the window is still lapsed");
+            }
+            crate::codex_window_kick::note_window_state(name.as_str(), !opened);
+            write_profile_cache(name, USAGE_CACHE_FILE, &fresh);
+            if let Ok(mut store) = state.store.lock() {
+                store.insert(name.to_string(), fresh);
+            }
+        }
+        Err(_) => {
+            logline!("{name}: 5h auto-start kick ran; the follow-up usage check failed");
+        }
+    }
 }
 
 /// Walk the codex chain over the readings just taken and move the codex active

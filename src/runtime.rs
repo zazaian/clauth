@@ -6503,7 +6503,7 @@ const CODEX_CONFIG_STRIP_SUBKEYS: &[(&str, &str)] = &[("debug", "config_lockfile
 ///
 /// Every branch lands owner-only: the copy sits in a tree the perms sweep
 /// stops short of, so the operator's own mode would otherwise be what it keeps.
-fn copy_codex_config(src: &Path, dst: &Path) -> Result<()> {
+pub(crate) fn copy_codex_config(src: &Path, dst: &Path) -> Result<()> {
     let raw = std::fs::read(src).with_context(|| format!("failed to read {}", src.display()))?;
     let bytes = match stripped_codex_config(&raw) {
         Some(parsed) => toml::to_string(&parsed)

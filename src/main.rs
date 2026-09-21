@@ -6,6 +6,7 @@ mod cli;
 mod codex_auth;
 mod codex_login;
 mod codex_profiles;
+mod codex_window_kick;
 mod completions;
 mod daemon;
 mod fallback;

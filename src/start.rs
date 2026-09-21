@@ -556,7 +556,7 @@ fn toml_path_value(path: &Path) -> String {
 /// through, and two accounts share one conversation history. Scrubbing the env
 /// cannot reach it, since the key outranks the variable, so it is pinned to the
 /// home clauth just set: exactly what codex resolves when neither is spelled.
-fn codex_spawn_command(
+pub(crate) fn codex_spawn_command(
     home: &Path,
     codex_args: &[String],
     active_env_keys: &[String],

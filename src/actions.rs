@@ -1567,7 +1567,7 @@ pub(crate) fn codex_login_browser(name: &str) -> Result<()> {
 /// — inside a `clauth start` codex session "the operator's login" resolves to
 /// some profile's store, and capturing a sibling profile's chain is never
 /// what this verb means.
-fn codex_operator_home() -> Result<std::path::PathBuf> {
+pub(crate) fn codex_operator_home() -> Result<std::path::PathBuf> {
     if let Some(dir) = std::env::var_os("CODEX_HOME").filter(|d| !d.is_empty()) {
         let dir = std::path::PathBuf::from(dir);
         if crate::runtime::is_codex_home_path(&dir) {

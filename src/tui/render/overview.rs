@@ -493,7 +493,10 @@ fn render_overview_row(
     // ticks to zero and then sits there claiming a refresh that will never run.
     // Blank the slot rather than lie, keeping its width so no column shifts. The
     // spinner goes too — nothing can be in flight for a profile nothing polls.
-    let timer_span = if disabled {
+    // `show_refresh_timers` off blanks it the same way for every row, disabled
+    // or not: an operator who finds the column noisy wants it gone everywhere,
+    // not conditionally.
+    let timer_span = if disabled || !cfg.state.show_refresh_timers {
         Span::raw(" ".repeat(TIMER_SLOT))
     } else {
         let inner = TIMER_SLOT - 1;

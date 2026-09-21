@@ -407,6 +407,12 @@ pub(crate) enum GlobalConfigRow {
     /// TUI-reachable switch for the whole feature. ENUMERATED on/off, ⏎
     /// mirrors space.
     CodexAutoStart,
+    /// Whether the Overview tab's per-claude-row refresh column (spinner or
+    /// "86s" countdown to the next scheduler poll) renders at all
+    /// (`AppState.show_refresh_timers`, default ON). Distinct from a usage
+    /// window's own reset countdown, which this does not touch. ENUMERATED
+    /// on/off, ⏎ mirrors space.
+    AccountTimers,
 }
 
 /// Inline editor state for the Config detail pane. Built on entry, torn down
@@ -4967,11 +4973,12 @@ pub(crate) const FALLBACK_ROWS: [FallbackRow; 8] = [
 /// Rows on the program-wide Config tab, in display order. Related knobs sit
 /// together instead of interleaving halt above detection; [`GlobalConfigRow::band`]
 /// names each run, and the renderer turns a band change into an eyebrow header.
-pub(crate) const GLOBAL_CONFIG_ROWS: [GlobalConfigRow; 18] = [
+pub(crate) const GLOBAL_CONFIG_ROWS: [GlobalConfigRow; 20] = [
     GlobalConfigRow::Theme,
     GlobalConfigRow::ResetShape,
     GlobalConfigRow::ClockNotation,
     GlobalConfigRow::HomeTab,
+    GlobalConfigRow::AccountTimers,
     GlobalConfigRow::DivergenceDefault,
     GlobalConfigRow::RefreshInterval,
     GlobalConfigRow::RefreshSpentAccounts,
@@ -4999,7 +5006,8 @@ impl GlobalConfigRow {
             GlobalConfigRow::Theme
             | GlobalConfigRow::ResetShape
             | GlobalConfigRow::ClockNotation
-            | GlobalConfigRow::HomeTab => "appearance",
+            | GlobalConfigRow::HomeTab
+            | GlobalConfigRow::AccountTimers => "appearance",
             GlobalConfigRow::DivergenceDefault
             | GlobalConfigRow::RefreshInterval
             | GlobalConfigRow::RefreshSpentAccounts
@@ -5116,6 +5124,7 @@ fn run_global_config_row(app: &mut App, row: GlobalConfigRow) {
             }
         }
         GlobalConfigRow::CodexAutoStart => toggle_codex_auto_start(app),
+        GlobalConfigRow::AccountTimers => toggle_account_timers(app),
     }
 }
 
@@ -5489,6 +5498,15 @@ fn toggle_auto_start_queue(app: &mut App) {
 /// split), not `AppState`. `update` loads under the state lock and mutates
 /// that exact snapshot, so this never races a concurrent codex write the way
 /// a separate load-then-save would.
+fn toggle_account_timers(app: &mut App) {
+    {
+        let mut cfg = app.config();
+        cfg.state.show_refresh_timers = !cfg.state.show_refresh_timers;
+        let _ = save_app_state(&cfg.state);
+    }
+    app.last_reload_fp = reload_fingerprint();
+}
+
 fn toggle_codex_auto_start(app: &mut App) {
     let _ = crate::codex_profiles::CodexState::update(|state| {
         state.set_auto_start(!state.auto_start_enabled());

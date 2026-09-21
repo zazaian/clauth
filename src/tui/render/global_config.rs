@@ -69,6 +69,7 @@ pub(super) fn draw(frame: &mut Frame<'_>, area: Rect, app: &App) {
             codex_auto_start: crate::codex_profiles::CodexState::load()
                 .map(|s| s.auto_start_enabled())
                 .unwrap_or(true),
+            account_timers: state.show_refresh_timers,
             reset_display: state.reset_display(),
             clock_format: state.clock_format(),
             home_tab: state.home_tab(),
@@ -216,6 +217,9 @@ struct RowState {
     /// own `config.toml` key. Always actionable (unlike `auto_start_queue`):
     /// there is no per-profile card to make it inert without.
     codex_auto_start: bool,
+    /// `AppState.show_refresh_timers` — whether the Overview tab's per-claude
+    /// refresh column renders at all. Always actionable.
+    account_timers: bool,
     reset_display: ResetDisplay,
     clock_format: ClockFormat,
     home_tab: HomeTab,
@@ -249,6 +253,11 @@ fn row_hint(row: GlobalConfigRow, rows: RowState, tunables: RowTunables) -> Opti
     // behavior hint — the dim is the "can't touch this", not a gate clause.
     let tip: String = match row {
         GlobalConfigRow::Theme => return None,
+        GlobalConfigRow::AccountTimers => String::from(if rows.account_timers {
+            "show each claude account's countdown to its next refresh"
+        } else {
+            "hide the refresh countdown — a usage window's own reset countdown is unaffected"
+        }),
         GlobalConfigRow::ResetShape => String::from(match rows.reset_display {
             ResetDisplay::Relative => "show how long a usage window has left",
             ResetDisplay::Clock => "show the time of day a usage window resets",
@@ -527,6 +536,9 @@ fn detail_row(
         }
         GlobalConfigRow::CodexAutoStart => {
             toggle_row(arrow, "auto-start", rows.codex_auto_start, selected)
+        }
+        GlobalConfigRow::AccountTimers => {
+            toggle_row(arrow, "account timers", rows.account_timers, selected)
         }
     }
 }

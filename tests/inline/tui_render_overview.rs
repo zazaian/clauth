@@ -712,6 +712,29 @@ fn cached_row_colors_countdown_amber_and_underlines_nothing() {
     assert_eq!(countdown.style.fg, Some(theme::warning_color()));
 }
 
+/// `show_refresh_timers = false` blanks the column outright — same slot the
+/// disabled-row path blanks, so no column shift either way — rather than
+/// just suppressing the stale-cue color a cached/failed reading would add.
+#[test]
+fn account_timers_off_blanks_the_refresh_countdown() {
+    let _home = crate::testutil::HomeSandbox::new();
+    let _tier = crate::testutil::TierSandbox::new(crate::tui::theme::Tier::Full);
+    let a = profile("a", 95.0, 10.0, 3600);
+    let mut config = config_with(vec![a], None, vec![]);
+    config.state.show_refresh_timers = false;
+    let app = App::new(config);
+    app.next_refresh_per_profile.lock().unwrap().insert(
+        FetchLeg::OAuth.key(ProfileName::from("a")),
+        now_ms() + 30_000,
+    );
+    let widths = OverviewWidths::new(80, &app);
+    let line = render_overview_row(&app, 0, &widths, false, true);
+    assert!(
+        !line.spans.iter().any(|s| s.content.ends_with("s ")),
+        "no countdown span (the `NNs ` shape) should render: {line:?}"
+    );
+}
+
 #[test]
 fn failed_row_colors_countdown_red() {
     let _home = crate::testutil::HomeSandbox::new();

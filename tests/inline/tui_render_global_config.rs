@@ -35,6 +35,7 @@ fn toggles() -> RowState {
         auto_start_queue: true,
         any_auto_start: true,
         codex_auto_start: true,
+        account_timers: true,
         reset_display: ResetDisplay::Relative,
         clock_format: ClockFormat::H24,
         home_tab: HomeTab::Overview,

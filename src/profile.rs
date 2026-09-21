@@ -957,6 +957,16 @@ pub(crate) struct AppState {
     /// in the Usage tab even when data is available.
     #[serde(default = "default_show_estimates", skip_serializing_if = "is_true")]
     pub(crate) show_estimates: bool,
+    /// When false, the Overview tab's per-claude-row refresh column (the
+    /// spinner or the "86s" countdown to the next scheduler poll) renders
+    /// blank instead — distinct from a usage window's OWN reset countdown,
+    /// which this does not touch. Codex rows never carry this column
+    /// regardless (that section is read-only).
+    #[serde(
+        default = "default_show_refresh_timers",
+        skip_serializing_if = "is_true"
+    )]
+    pub(crate) show_refresh_timers: bool,
     /// When true, the Usage tab overlays an ideal-pace `│` marker on each window
     /// bar (off by default). Toggled from the Usage action menu.
     #[serde(default, skip_serializing_if = "is_false")]
@@ -1121,6 +1131,10 @@ fn default_show_estimates() -> bool {
     true
 }
 
+fn default_show_refresh_timers() -> bool {
+    true
+}
+
 fn default_refresh_spent() -> bool {
     true
 }
@@ -1220,6 +1234,7 @@ impl Default for AppState {
             clock_format: None,
             home_tab: None,
             show_estimates: true,
+            show_refresh_timers: true,
             show_pace: false,
             count_cache: false,
             refresh_interval_ms: default_refresh_interval(),

@@ -319,6 +319,7 @@ fn oauth_profile(
             spend,
             codex_limit_reached: None,
             codex_reset_credits: None,
+            codex_primary_window_lapsed: None,
             open_at: None,
             fetched_at: None,
         }),

@@ -476,6 +476,15 @@ pub(crate) struct UsageInfo {
     /// so it costs no extra request; clauth reads it and never spends one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) codex_reset_credits: Option<i64>,
+    /// Whether the PRIMARY (5h) window is a dormant placeholder rather than a
+    /// real, ticking one: the server reports `reset_after_seconds ==
+    /// limit_window_seconds` exactly whenever no real inference has opened
+    /// it, and that pair drifts forward with every poll until one does
+    /// (verified live 2026-09-21: two different never-touched accounts read
+    /// identical `reset_at`s, each exactly the poll instant plus the window
+    /// length). `None` when the wire sent no usable window to judge.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) codex_primary_window_lapsed: Option<bool>,
     /// The authoritative 5h-window open instant, in epoch seconds. Present only
     /// on the synthetic stamp a landed kick wrote ([`crate::usage::scheduler`]'s
     /// `mark_window_open`): a history line carrying it is clauth's own durable
@@ -1238,6 +1247,7 @@ fn assemble_usage(
                 // Codex-only readings: the claude body carries neither.
                 codex_limit_reached: None,
                 codex_reset_credits: None,
+                codex_primary_window_lapsed: None,
                 open_at: None,
                 fetched_at: None,
             })

@@ -31,6 +31,50 @@ fn duration_decides_the_slot_whatever_the_position() {
     );
 }
 
+/// The dormancy signal `codex_window_kick`'s auto-start leg gates on: a
+/// primary window whose remaining time exactly equals its full length has
+/// never been opened by a real request (verified live against `wham/usage`,
+/// see that module's doc comment) — not a threshold, exact equality, since
+/// the server's placeholder for "no window yet" IS the full window length,
+/// never one second under it.
+#[test]
+fn a_dormant_primary_window_reads_as_lapsed() {
+    let body = r#"{
+        "rate_limit": {
+            "primary_window": {"used_percent": 0, "limit_window_seconds": 18000, "reset_after_seconds": 18000, "reset_at": 1700018000}
+        }
+    }"#;
+    let info = map_usage(body, 1_700_000_000).expect("parses");
+    assert_eq!(info.codex_primary_window_lapsed, Some(true));
+}
+
+/// One second under the full window is enough to read as real: a live window
+/// that has taken even a sliver of use is not the placeholder.
+#[test]
+fn a_window_counting_down_reads_as_not_lapsed() {
+    let body = r#"{
+        "rate_limit": {
+            "primary_window": {"used_percent": 1, "limit_window_seconds": 18000, "reset_after_seconds": 17999, "reset_at": 1700017999}
+        }
+    }"#;
+    let info = map_usage(body, 1_700_000_000).expect("parses");
+    assert_eq!(info.codex_primary_window_lapsed, Some(false));
+}
+
+/// No usable duration means there is nothing to judge dormancy against —
+/// `None`, not a guessed `false`, so a caller can tell "no signal" apart from
+/// "confirmed live".
+#[test]
+fn no_usable_duration_leaves_lapsed_unjudged() {
+    let body = r#"{
+        "rate_limit": {
+            "primary_window": {"used_percent": 5, "limit_window_seconds": 0, "reset_after_seconds": 0}
+        }
+    }"#;
+    let info = map_usage(body, 1_700_000_000).expect("parses");
+    assert_eq!(info.codex_primary_window_lapsed, None);
+}
+
 /// A window with no usable duration falls back to POSITION — primary is the
 /// short one, secondary the long one, which is the layout every observed
 /// account has.

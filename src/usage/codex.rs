@@ -168,6 +168,16 @@ pub(crate) fn map_usage(body: &str, now_secs: i64) -> Result<UsageInfo, FetchErr
         }
     }
 
+    // The primary slot is the 5h one on every observed layout (place_windows'
+    // rule 2), so its raw pair is the one the auto-start kick acts on. Exact
+    // equality, not a threshold: the placeholder IS the full window length,
+    // never one second under it.
+    let primary_lapsed = rate_limit
+        .primary_window
+        .as_ref()
+        .filter(|w| w.limit_window_seconds > 0)
+        .map(|w| w.reset_after_seconds == w.limit_window_seconds);
+
     Ok(UsageInfo {
         plan: Some(PlanInfo {
             codex_plan: raw
@@ -183,6 +193,7 @@ pub(crate) fn map_usage(body: &str, now_secs: i64) -> Result<UsageInfo, FetchErr
             .and_then(|r| r.kind)
             .filter(|k| !k.is_empty()),
         codex_reset_credits: raw.rate_limit_reset_credits.map(|c| c.available_count),
+        codex_primary_window_lapsed: primary_lapsed,
         ..UsageInfo::default()
     })
 }

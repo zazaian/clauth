@@ -2096,6 +2096,7 @@ fn extra_bar_dedups_against_spend_and_scales_cents() {
             spend,
             codex_limit_reached: None,
             codex_reset_credits: None,
+            codex_primary_window_lapsed: None,
             open_at: None,
             fetched_at: None,
         });

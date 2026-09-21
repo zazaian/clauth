@@ -142,17 +142,23 @@ const KICK_PROMPT: &str =
 /// doc's note on `codex exec`'s exit code. The caller re-polls usage to find
 /// out.
 pub(crate) fn spawn_kick(name: &ProfileName) -> bool {
-    let Ok(store_auth) = profile_subpath(name, "auth.json") else {
-        return false;
-    };
     let Ok(tmp) = tempfile::tempdir() else {
         logline!("{name}: 5h window kick could not build a scratch home");
         return false;
     };
     let home = tmp.path();
 
+    // `store_auth` only ever feeds the unix symlink call below, so it is
+    // computed inside that arm: a non-unix build that computed it anyway
+    // would bind it and never read it, which is exactly what CI's Windows
+    // leg (`-D warnings` promotes clippy's `unused_variables`) caught.
     #[cfg(unix)]
-    let linked = std::os::unix::fs::symlink(&store_auth, home.join("auth.json")).is_ok();
+    let linked = {
+        let Ok(store_auth) = profile_subpath(name, "auth.json") else {
+            return false;
+        };
+        std::os::unix::fs::symlink(&store_auth, home.join("auth.json")).is_ok()
+    };
     #[cfg(not(unix))]
     let linked = false;
     if !linked {

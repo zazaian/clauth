@@ -11455,15 +11455,10 @@ fn a_plain_launch_with_home_tab_set_lands_on_that_tab() {
 fn home_tab_cycles_from_the_config_appearance_row() {
     let _home = crate::testutil::HomeSandbox::new();
     let mut app = bare_app();
-    let home_row = super::GLOBAL_CONFIG_ROWS.iter().copied().find(|row| {
-        row.band() == "appearance"
-            && !matches!(
-                row,
-                super::GlobalConfigRow::Theme
-                    | super::GlobalConfigRow::ResetShape
-                    | super::GlobalConfigRow::ClockNotation
-            )
-    });
+    let home_row = super::GLOBAL_CONFIG_ROWS
+        .iter()
+        .copied()
+        .find(|row| *row == super::GlobalConfigRow::HomeTab);
     assert!(
         home_row.is_some(),
         "the appearance band holds the home tab row"

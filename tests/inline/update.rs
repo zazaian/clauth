@@ -265,3 +265,16 @@ fn pinned_public_key_parses_when_set() {
         PublicKey::from_base64(key).expect("pinned MINISIGN_PUBLIC_KEY must be a valid key");
     }
 }
+
+// ── is_fork_build (see build.rs's CLAUTH_VERSION_SUFFIX) ───────────────────
+
+/// `CLAUTH_VERSION_SUFFIX` is a compile-time `env!`, so this pins a fact about
+/// THIS checkout rather than the function in the abstract: right now it has
+/// commits past `v0.15.2`, so a build of it must never be treated as
+/// upstream's own unmodified binary. A future change to `build.rs` that
+/// silently stopped setting the suffix on a fork build would be caught here,
+/// rather than only in a live self-replace no one meant to allow.
+#[test]
+fn this_checkout_is_detected_as_a_fork_build() {
+    assert!(is_fork_build());
+}

@@ -679,7 +679,7 @@ pub(crate) fn build_status(
         codex_fallback_chain: codex.fallback_chain().to_vec(),
         codex_wrap_off: codex.switch_off_when_spent(),
         refresh_interval_ms: interval_ms,
-        clauth_version: env!("CARGO_PKG_VERSION").to_string(),
+        clauth_version: crate::cli::VERSION.to_string(),
         profiles,
     }
 }

@@ -21,10 +21,19 @@ use crate::runtime::Isolation;
 /// parse fine and then serve nobody.
 pub(crate) const DEFAULT_LISTEN: &str = "0.0.0.0:8443";
 
+/// `CARGO_PKG_VERSION` plus `build.rs`'s `CLAUTH_VERSION_SUFFIX` — empty on a
+/// build that IS the matching upstream release tag exactly, `+N.gHASH[.dirty]`
+/// on any of this fork's own builds since (see `build.rs`'s `describe_suffix`
+/// for why `+`, not `-`). Always set (never `option_env!`), so this and every
+/// other build here stay on equal footing. Also what `status.json`'s
+/// `clauth_version` publishes ([`crate::daemon::status_json`]) — anything
+/// reading that feed should see the same distinction `--version` does.
+pub(crate) const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), env!("CLAUTH_VERSION_SUFFIX"));
+
 #[derive(Parser, Debug)]
 #[command(
     name = "clauth",
-    version,
+    version = VERSION,
     about = "launcher and account manager for claude code",
     after_help = "With no command, clauth launches the TUI; `clauth <profile>` switches to that account and exits \
                   (deprecated, use `clauth switch <name>`). \

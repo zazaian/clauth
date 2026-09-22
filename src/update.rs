@@ -37,6 +37,11 @@ pub(crate) enum UpdateEvent {
     /// Newer release exists but can't be self-applied (cargo install or no
     /// prebuilt asset); user must update manually.
     Available(String),
+    /// Upstream released something past the tag this fork build's own commits
+    /// sit on. NOT an instruction to `cargo install`/reinstall — that would
+    /// discard every one of this fork's own commits for upstream's unmodified
+    /// binary. Purely a "you may want to go rebase" nudge.
+    AvailableUpstream(String),
 }
 
 #[derive(Deserialize)]
@@ -51,8 +56,21 @@ struct Asset {
     browser_download_url: String,
 }
 
-/// The version this binary is, read off the manifest at build time.
+/// The version this binary is, read off the manifest at build time. Deliberately
+/// the bare `CARGO_PKG_VERSION`, not `cli::VERSION`'s build-decorated form:
+/// `is_newer` below parses this as plain `X.Y.Z`, and comparing against
+/// upstream's own release tags is exactly the semantics that needs.
 pub(crate) const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Whether this exact build has commits past the upstream tag matching
+/// `CURRENT_VERSION` (see `build.rs`'s `CLAUTH_VERSION_SUFFIX`). A build that
+/// does must never self-replace with upstream's own released binary: that
+/// binary is a DIFFERENT codebase, none of this fork's own commits, so
+/// "upstream published something newer" does not mean "safe to become" the
+/// way it does for an unmodified install built straight from a release tag.
+fn is_fork_build() -> bool {
+    !env!("CLAUTH_VERSION_SUFFIX").is_empty()
+}
 
 /// Returns `true` when the update system is active (env var unset or not `"1"`).
 pub(crate) fn updates_enabled() -> bool {
@@ -83,6 +101,15 @@ fn try_update(tx: &Sender<UpdateEvent>) -> anyhow::Result<()> {
         return Ok(());
     }
     let version = release.tag_name.trim_start_matches('v').to_string();
+
+    // A fork build is checked before anything else below: whatever the
+    // platform or install method, `cargo install clauth` / a self-replace are
+    // both instructions to become upstream's OWN unmodified binary, which is
+    // never right while this build carries commits of its own.
+    if is_fork_build() {
+        let _ = tx.send(UpdateEvent::AvailableUpstream(version));
+        return Ok(());
+    }
 
     // Cargo install or unsupported platform: notify only.
     let Some(asset) = asset_name() else {

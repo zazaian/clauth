@@ -57,6 +57,8 @@ This branch is kept in sync with [upstream `mommy`](https://github.com/uwuclxdy/
 
 This fork publishes none of its own binaries, install script, or wiki — the install paths and wiki links in this README are upstream's. To run what's on this branch, build it from source ([Development](#development)).
 
+`clauth --version` shows exactly which of this fork's own builds you're running: `0.15.2` alone means an unmodified checkout of that upstream tag, `0.15.2+141.g6420cee` means 141 commits past it (upstream's own continued work plus this fork's), at commit `6420cee`. The self-updater notices when upstream ships something newer too, but on a build with commits of its own it only ever nudges you to rebase — never silently replaces the running binary with upstream's unmodified one.
+
 ## How it works
 
 Claude Code stores its session in `~/.claude/.credentials.json` (OAuth tokens) and the `env` block of `~/.claude/settings.json` (base URL, API key). clauth keeps a per-profile snapshot of both. A switch swaps those two in place and leaves the rest of `~/.claude/` untouched. `clauth start` takes a different route: it launches `claude` against a temporary `~/.claude` mirror, so several accounts run at once.

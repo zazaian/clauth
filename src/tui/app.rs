@@ -10501,6 +10501,12 @@ pub(crate) fn on_tick(app: &mut App) {
                     format!("update available: v{v}\nreinstall with cargo install clauth"),
                 );
             }
+            UpdateEvent::AvailableUpstream(v) => {
+                app.toast(
+                    ToastKind::Info,
+                    format!("upstream released v{v}\nrebase this fork when you're ready"),
+                );
+            }
         }
     }
 
